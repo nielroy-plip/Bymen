@@ -1,6 +1,7 @@
 import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import DashboardScreen from './screens/DashboardScreen';
 import ClientesScreen from './screens/ClientesScreen';
 import EstoqueScreen from './screens/EstoqueScreen';
@@ -19,11 +20,16 @@ export default function TabRoutes() {
         tabBarStyle: { backgroundColor: '#fff', borderTopWidth: 1, borderTopColor: '#E5E7EB' },
         tabBarIcon: ({ color, size }) => {
           let iconName = 'home';
+          let IconComponent = Ionicons;
           if (route.name === 'Dashboard') iconName = 'home';
           if (route.name === 'Clientes') iconName = 'people';
-          if (route.name === 'Estoque') iconName = 'cube';
+          if (route.name === 'Estoque') {
+            // Usar ícone de bancada customizado (MaterialCommunityIcons: table-furniture)
+            IconComponent = MaterialCommunityIcons;
+            iconName = 'table-furniture';
+          }
           if (route.name === 'Relatorios') iconName = 'stats-chart';
-          return <Ionicons name={iconName} size={size} color={color} />;
+          return <IconComponent name={iconName} size={size} color={color} />;
         },
       })}
     >

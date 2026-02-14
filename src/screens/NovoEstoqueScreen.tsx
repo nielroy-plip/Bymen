@@ -8,6 +8,8 @@ import { PRODUCTS, PRODUTOS_BANCADA } from '../data/products';
 import * as Print from 'expo-print';
 import { generateEstoquePDF } from '../services/pdf';
 import SignaturePad from '../components/SignaturePad';
+import { Ionicons } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 
   const NovoEstoqueScreen: React.FC = () => {
     const [activeTab, setActiveTab] = useState<'produtos' | 'bancada'>('produtos');
@@ -61,6 +63,7 @@ import SignaturePad from '../components/SignaturePad';
               marginBottom: 8
             }}
           >
+            <Ionicons name="cube-outline" size={18} color={activeTab === 'produtos' ? '#fff' : '#3B82F6'} style={{ marginRight: 4 }} />
             <Text style={{ fontWeight: '700', color: activeTab === 'produtos' ? '#FFFFFF' : '#6B7280' }}>Produtos</Text>
           </Pressable>
           <Pressable
@@ -71,9 +74,13 @@ import SignaturePad from '../components/SignaturePad';
               borderRadius: 8,
               backgroundColor: activeTab === 'bancada' ? '#DC2626' : '#F3F4F6',
               alignItems: 'center',
-              marginBottom: 8
+              marginBottom: 8,
+              flexDirection: 'row',
+              justifyContent: 'center',
+              gap: 6
             }}
           >
+            <MaterialCommunityIcons name="table-furniture" size={18} color={activeTab === 'bancada' ? '#fff' : '#DC2626'} style={{ marginRight: 4 }} />
             <Text style={{ fontWeight: '700', color: activeTab === 'bancada' ? '#FFFFFF' : '#6B7280' }}>Bancada</Text>
           </Pressable>
         </View>

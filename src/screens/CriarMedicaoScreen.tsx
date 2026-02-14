@@ -12,6 +12,7 @@ import { formatCurrency, formatDateTime } from '../utils/format';
 import { sum } from '../utils/calculate';
 import { useResponsive } from '../hooks/useResponsive';
 import { Ionicons } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'CriarMedicao'>;
 
@@ -208,7 +209,7 @@ export default function CriarMedicaoScreen({ navigation, route }: Props) {
               gap: 6
             }}
           >
-            <Ionicons name="construct-outline" size={20} color={activeTab === 'bancada' ? '#fff' : '#DC2626'} style={{ marginRight: 4 }} />
+            <MaterialCommunityIcons name="table-furniture" size={18} color={activeTab === 'bancada' ? '#fff' : '#3B82F6'} style={{ marginRight: 4 }} />
             <Text
               style={{
                 fontSize: fontSize.base,

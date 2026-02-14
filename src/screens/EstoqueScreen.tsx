@@ -10,6 +10,7 @@ import { Product } from '../components/ProductRow';
 import { PRODUTOS_BANCADA } from '../data/products';
 import BancadaRowComponent from '../components/BancadaRow';
 import { Ionicons } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Estoque'>;
 
@@ -119,7 +120,7 @@ export default function EstoqueScreen({ navigation }: Props) {
             gap: 6
           }}
         >
-          <Ionicons name="construct-outline" size={18} color={activeTab === 'bancada' ? '#fff' : '#DC2626'} style={{ marginRight: 4 }} />
+          <MaterialCommunityIcons name="table-furniture" size={18} color={activeTab === 'bancada' ? '#fff' : '#3B82F6'} style={{ marginRight: 4 }} />
           <Text style={{ fontWeight: '700', color: activeTab === 'bancada' ? '#FFFFFF' : '#6B7280' }}>Bancada</Text>
         </Pressable>
       </View>
