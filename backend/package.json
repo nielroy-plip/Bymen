@@ -2,8 +2,10 @@
   "name": "bymen-backend",
   "private": true,
   "scripts": {
+    "build": "tsc -p tsconfig.json",
     "start": "ts-node src/main.ts",
     "start:dev": "ts-node src/main.ts",
+    "start:prod": "node dist/main.js",
     "test": "jest",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
