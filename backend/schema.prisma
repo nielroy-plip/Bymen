@@ -1,0 +1,130 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  username     String?  @unique
+  phone        String?
+  passwordHash String
+  role         String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Client {
+  id           String   @id @default(uuid())
+  name         String
+  phone        String
+  documentEnc  String
+  documentHash String   @unique
+  blingExternalId String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Product {
+  id            String   @id @default(uuid())
+  name          String
+  line          String
+  capacity      String
+  type          String
+  basePrice     Float
+  suggestedPrice Float
+  blingExternalId String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model InventoryLocation {
+  id              String   @id @default(uuid())
+  name            String
+  affectsFinancial Boolean
+}
+
+model InventoryMovement {
+  id                String   @id @default(uuid())
+  productId         String
+  locationId        String
+  type              String
+  quantity          Int
+  unitPriceSnapshot Float
+  medicaoId         String?
+  blingExternalId   String?
+  createdBy         String?
+  createdAt         DateTime @default(now())
+}
+
+model Medicao {
+  id           String   @id @default(uuid())
+  version      Int      @default(0)
+  status       String
+  totalSnapshot Float
+  contentHash  String
+  idempotencyKey String? @unique
+  blingOrderNumber String?
+  invoiceAccessKey String?
+  invoicePdfUrl String?
+  finalizedAt DateTime?
+  createdBy String?
+  updatedBy String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Assinatura {
+  id            String   @id @default(uuid())
+  medicaoId     String
+  s3Url         String
+  signatureHash String
+  reportHash    String
+  ip            String
+  userAgent     String
+  createdAt     DateTime @default(now())
+}
+
+model FinancialEntry {
+  id         String   @id @default(uuid())
+  movementId String
+  createdAt  DateTime @default(now())
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  action    String
+  userId    String
+  ip        String?
+  details   String
+  createdAt DateTime @default(now())
+}
+
+model IntegrationLog {
+  id           String   @id @default(uuid())
+  provider     String
+  endpoint     String
+  method       String
+  requestBody  String?
+  responseBody String?
+  statusCode   Int?
+  success      Boolean  @default(false)
+  environment  String
+  createdAt    DateTime @default(now())
+}
+
+model IntegrationDeadLetter {
+  id           String   @id @default(uuid())
+  provider     String
+  endpoint     String
+  method       String
+  requestBody  String?
+  errorMessage String
+  attempts     Int      @default(0)
+  environment  String
+  createdAt    DateTime @default(now())
+}

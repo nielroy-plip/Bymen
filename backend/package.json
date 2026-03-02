@@ -1,0 +1,53 @@
+{
+  "name": "bymen-backend",
+  "private": true,
+  "scripts": {
+    "start": "ts-node src/main.ts",
+    "start:dev": "ts-node src/main.ts",
+    "test": "jest",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:deploy": "prisma migrate deploy"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.993.0",
+    "@nestjs/common": "^11.1.14",
+    "@nestjs/config": "^4.0.3",
+    "@nestjs/core": "^11.1.14",
+    "@nestjs/jwt": "^11.0.2",
+    "@nestjs/passport": "^11.0.5",
+    "@nestjs/platform-express": "^11.1.14",
+    "@prisma/client": "^6.19.2",
+    "axios": "^1.12.2",
+    "bcrypt": "^6.0.0",
+    "class-transformer": "^0.5.1",
+    "class-validator": "^0.14.3",
+    "dotenv": "^17.3.1",
+    "express-rate-limit": "^8.1.0",
+    "helmet": "^8.1.0",
+    "passport": "^0.7.0",
+    "passport-jwt": "^4.0.1",
+    "prisma": "^6.19.2",
+    "rate-limiter-flexible": "^9.1.1",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2",
+    "uuid": "^13.0.0",
+    "xml2js": "^0.6.2"
+  },
+  "devDependencies": {
+    "@nestjs/cli": "^7.6.0",
+    "@nestjs/testing": "^11.1.14",
+    "@types/bcrypt": "^6.0.0",
+    "@types/express": "^5.0.6",
+    "@types/jest": "^30.0.0",
+    "@types/passport-jwt": "^4.0.1",
+    "@types/supertest": "^6.0.3",
+    "@types/uuid": "^10.0.0",
+    "@types/xml2js": "^0.4.14",
+    "jest": "^30.1.3",
+    "supertest": "^7.1.4",
+    "ts-jest": "^29.4.4",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3"
+  }
+}
