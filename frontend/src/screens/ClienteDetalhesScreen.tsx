@@ -159,34 +159,9 @@ export default function ClienteDetalhesScreen({ navigation, route }: Props) {
         </Card>
         <Card>
           <Text style={{ fontSize: 18, fontWeight: '600', color: '#111827', marginBottom: 8 }}>Últimas medições</Text>
-          {medicoes.length === 0 && [1,2,3].map((i) => (
-            <View
-              key={i}
-              style={{ paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#F3F4F6', opacity: 0.8 }}
-            >
-              <Text style={{ color: '#111827' }}>{formatDateTime(new Date(Date.now() - i * 86400000))}</Text>
-              <Text style={{ color: '#6B7280' }}>R$ 150,00 • 5 itens</Text>
-              <Text
-                style={{ color: '#3B82F6', marginTop: 2, fontSize: 13 }}
-                onPress={() => navigation.navigate('FinalizarMedicao', {
-                  clientId: client.id,
-                  medicaoRows: [
-                    { id: '1', nome: 'Shampoo', linha: 'Wood', cap: 240, preco: 42, estoqueAtual: 10, vendidos: 2, repostos: 1, diferenca: 8, novoEstoque: 9, valorMedicao: 84 },
-                    { id: '2', nome: 'Pomada', linha: 'Classic', cap: 90, preco: 65, estoqueAtual: 5, vendidos: 1, repostos: 0, diferenca: 4, novoEstoque: 4, valorMedicao: 65 },
-                  ],
-                  bancadaRows: [
-                    { id: 'b1', nome: 'Pó Modelador', linha: 'Wood', cap: 20, preco: 30, quantidadeComprada: 1, valorTotal: 30 }
-                  ],
-                  valorMedicao: 149,
-                  valorBancada: 30,
-                  totalGeral: 179,
-                  dateTime: new Date(Date.now() - i * 86400000).toISOString(),
-                })}
-              >
-                Reabrir medição
-              </Text>
-            </View>
-          ))}
+          {medicoes.length === 0 && (
+            <Text style={{ color: '#6B7280', fontStyle: 'italic' }}>Nenhuma medição encontrada.</Text>
+          )}
           {medicoes.map((m) => (
             <View
               key={m.id}

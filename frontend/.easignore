@@ -1,0 +1,27 @@
+# Dependências e cache
+node_modules
+.expo
+
+# Build artifacts locais
+dist
+android
+ios
+
+# VCS e editor
+.git
+.gitignore
+.vscode
+
+# Ambientes locais
+.env
+.env.*
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+*.log
+
+# Sistema
+.DS_Store
+Thumbs.db

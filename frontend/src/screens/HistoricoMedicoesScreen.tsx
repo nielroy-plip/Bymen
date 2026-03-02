@@ -11,106 +11,8 @@ import { sharePdf } from '../services/whatsapp';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'HistoricoMedicoes'>;
 
-// Dados mockados para demonstração do filtro
-const MOCK_MEASUREMENTS: Measurement[] = [
-  // Janeiro 2026
-  {
-    id: 'mock-1',
-    clientId: 'barbearia-elite',
-    dateTime: '15/01/2026 14:30',
-    medicaoRows: [
-      { id: 'p1', nome: 'Shampoo', linha: 'Wood', cap: 240, preco: 39.9, precoSugestao: 69.9, estoqueAtual: 50, vendidos: 20, repostos: 10, diferenca: 30, novoEstoque: 40, valorMedicao: 798 }
-    ],
-    bancadaRows: [
-      { id: 'b1', nome: 'Shampoo', linha: 'Wood', cap: 1000, preco: 89.9, quantidadeComprada: 2, valorTotal: 179.8 }
-    ],
-    valorMedicao: 798,
-    valorBancada: 179.8,
-    totalGeral: 977.8
-  },
-  {
-    id: 'mock-2',
-    clientId: 'barbearia-style',
-    dateTime: '22/01/2026 10:00',
-    medicaoRows: [
-      { id: 'p2', nome: 'Condicionador', linha: 'Wood', cap: 140, preco: 34.9, precoSugestao: 59.9, estoqueAtual: 30, vendidos: 15, repostos: 5, diferenca: 15, novoEstoque: 20, valorMedicao: 523.5 }
-    ],
-    bancadaRows: [],
-    valorMedicao: 523.5,
-    valorBancada: 0,
-    totalGeral: 523.5
-  },
-  // Dezembro 2025
-  {
-    id: 'mock-3',
-    clientId: 'barbearia-elite',
-    dateTime: '10/12/2025 16:00',
-    medicaoRows: [
-      { id: 'p1', nome: 'Shampoo', linha: 'Wood', cap: 240, preco: 39.9, precoSugestao: 69.9, estoqueAtual: 60, vendidos: 25, repostos: 15, diferenca: 35, novoEstoque: 50, valorMedicao: 997.5 }
-    ],
-    bancadaRows: [],
-    valorMedicao: 997.5,
-    valorBancada: 0,
-    totalGeral: 997.5
-  },
-  {
-    id: 'mock-4',
-    clientId: 'barbearia-style',
-    dateTime: '18/12/2025 11:30',
-    medicaoRows: [
-      { id: 'p3', nome: 'Energizador', linha: 'Ocean', cap: 140, preco: 44.9, precoSugestao: 74.9, estoqueAtual: 40, vendidos: 18, repostos: 8, diferenca: 22, novoEstoque: 30, valorMedicao: 808.2 }
-    ],
-    bancadaRows: [
-      { id: 'b2', nome: 'Gel de Barbear', linha: 'Wood', cap: 1000, preco: 94.9, quantidadeComprada: 1, valorTotal: 94.9 }
-    ],
-    valorMedicao: 808.2,
-    valorBancada: 94.9,
-    totalGeral: 903.1
-  },
-  // Novembro 2025
-  {
-    id: 'mock-5',
-    clientId: 'barbearia-elite',
-    dateTime: '20/11/2025 10:15',
-    medicaoRows: [
-      { id: 'p4', nome: 'Balm de Barba', linha: 'Wood', cap: 140, preco: 49.9, precoSugestao: 79.9, estoqueAtual: 35, vendidos: 12, repostos: 7, diferenca: 23, novoEstoque: 30, valorMedicao: 598.8 }
-    ],
-    bancadaRows: [],
-    valorMedicao: 598.8,
-    valorBancada: 0,
-    totalGeral: 598.8
-  },
-  // Outubro 2025
-  {
-    id: 'mock-6',
-    clientId: 'barbearia-style',
-    dateTime: '05/10/2025 13:45',
-    medicaoRows: [
-      { id: 'p6', nome: 'Óleo de Barba', linha: 'Wood', cap: 30, preco: 54.9, precoSugestao: 89.9, estoqueAtual: 25, vendidos: 10, repostos: 5, diferenca: 15, novoEstoque: 20, valorMedicao: 549 }
-    ],
-    bancadaRows: [],
-    valorMedicao: 549,
-    valorBancada: 0,
-    totalGeral: 549
-  },
-  {
-    id: 'mock-7',
-    clientId: 'barbearia-elite',
-    dateTime: '28/10/2025 15:20',
-    medicaoRows: [
-      { id: 'p8', nome: 'Pomada Efeito Matte', linha: 'Wood', cap: 100, preco: 59.9, precoSugestao: 89.9, estoqueAtual: 30, vendidos: 8, repostos: 4, diferenca: 22, novoEstoque: 26, valorMedicao: 479.2 }
-    ],
-    bancadaRows: [
-      { id: 'b3', nome: 'Condicionador', linha: 'Wood', cap: 500, preco: 64.9, quantidadeComprada: 1, valorTotal: 64.9 }
-    ],
-    valorMedicao: 479.2,
-    valorBancada: 64.9,
-    totalGeral: 544.1
-  }
-];
-
 export default function HistoricoMedicoesScreen({ navigation }: Props) {
-  const [items, setItems] = useState<Measurement[]>(MOCK_MEASUREMENTS);
+  const [items, setItems] = useState<Measurement[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [selectedMonth, setSelectedMonth] = useState<string>('');
 
@@ -121,7 +23,7 @@ export default function HistoricoMedicoesScreen({ navigation }: Props) {
         listClients(),
       ]);
       setClients(savedClients);
-      setItems(savedMeasurements.length > 0 ? savedMeasurements : MOCK_MEASUREMENTS);
+      setItems(savedMeasurements);
     }
 
     load();
