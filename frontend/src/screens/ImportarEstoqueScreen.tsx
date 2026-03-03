@@ -45,7 +45,8 @@ export default function ImportarEstoqueScreen({ navigation }: Props) {
           repostos: 0,
           diferenca: 0,
           novoEstoque: estoqueAtual,
-          valorMedicao: 0
+          valorMedicao: 0,
+          produtosRetirados: 0,
         };
       });
 
@@ -56,14 +57,12 @@ export default function ImportarEstoqueScreen({ navigation }: Props) {
       await saveMeasurement({
         id: Date.now().toString(),
         clientId: client.id,
-        medicaoRows: medicaoRows,
+        medicaoRows,
         bancadaRows: [],
         valorMedicao: 0,
         valorBancada: 0,
         totalGeral: 0,
         dateTime,
-        total: undefined,
-        rows: undefined
       });
 
       Alert.alert('Sucesso', 'Estoque importado como medição');

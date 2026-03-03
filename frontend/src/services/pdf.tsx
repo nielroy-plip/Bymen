@@ -2,6 +2,7 @@ import * as Print from 'expo-print';
 import { formatCurrency } from '../utils/format';
 import { Client } from '../data/clients';
 import { MeasurementRow } from './api';
+import { PRODUCTS, PRODUTOS_BANCADA } from '../data/products';
 
 export async function generateStockPDF(params: {
   client: Client;
@@ -372,7 +373,13 @@ export async function generateMeasurementPDF(params: {
 }
 
 export async function generateEstoquePDF({ estoque, bancada, signatureDataUrl }: { estoque: Record<string, string>, bancada: Record<string, string>, signatureDataUrl?: string }): Promise<string> {
-  const { PRODUCTS, PRODUTOS_BANCADA } = require('../data/products');
+  const hasProdutos = PRODUCTS.some((p: any) => parseInt(estoque[p.id] || '0', 10) > 0);
+  const hasBancada = PRODUTOS_BANCADA.some((p: any) => parseInt(bancada[p.id] || '0', 10) > 0);
+
+  if (!hasProdutos && !hasBancada) {
+    throw new Error('nenhum item de estoque foi informado para gerar o PDF');
+  }
+
   // Tabela produtos
   const produtosRowsHTML = PRODUCTS.filter((p: any) => parseInt(estoque[p.id]||'0') > 0)
     .map((p: any) =>

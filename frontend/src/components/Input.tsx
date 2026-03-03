@@ -9,9 +9,10 @@ type Props = {
   keyboardType?: TextInputProps['keyboardType'];
   placeholder?: string;
   style?: any;
+  maxLength?: number;
 };
 
-export default function Input({ label, value, onChangeText, keyboardType, placeholder }: Props) {
+export default function Input({ label, value, onChangeText, keyboardType, placeholder, style, maxLength }: Props) {
   const { isTablet, inputHeight, fontSize } = useResponsive();
   const bigInputHeight = isTablet ? 72 : 60;
   const bigFontSize = isTablet ? 22 : 20;
@@ -24,6 +25,7 @@ export default function Input({ label, value, onChangeText, keyboardType, placeh
         onChangeText={onChangeText}
         keyboardType={keyboardType}
         placeholder={placeholder}
+        maxLength={maxLength}
         style={{
           borderWidth: 1,
           borderColor: '#E5E7EB',
@@ -33,7 +35,7 @@ export default function Input({ label, value, onChangeText, keyboardType, placeh
           fontSize: bigFontSize,
           color: '#111827',
           minHeight: bigInputHeight,
-          ...(typeof (arguments[0]?.style) === 'object' ? arguments[0].style : {})
+          ...(typeof style === 'object' ? style : {})
         }}
         placeholderTextColor="#9CA3AF"
       />

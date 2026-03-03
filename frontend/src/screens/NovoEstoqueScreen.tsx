@@ -1,18 +1,21 @@
 import React, { useState } from 'react';
 import * as Sharing from 'expo-sharing';
-import { View, Text, ScrollView, Alert, Pressable } from 'react-native';
+import { View, Text, ScrollView, Alert, Pressable, Platform } from 'react-native';
+import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { RootStackParamList } from '../routes';
 import Card from '../components/Card';
 import Input from '../components/Input';
 import Button from '../components/Button';
 import { PRODUCTS, PRODUTOS_BANCADA } from '../data/products';
-import * as Print from 'expo-print';
 import { generateEstoquePDF } from '../services/pdf';
 import SignaturePad from '../components/SignaturePad';
 import { Ionicons } from '@expo/vector-icons';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { removeProductStock } from '../services/api';
+import { addClientInitialStock, removeProductStock, saveClient } from '../services/api';
 
-  const NovoEstoqueScreen: React.FC = () => {
+type Props = NativeStackScreenProps<RootStackParamList, 'NovoEstoque'>;
+
+  const NovoEstoqueScreen: React.FC<Props> = ({ navigation, route }) => {
     const [activeTab, setActiveTab] = useState<'produtos' | 'bancada'>('produtos');
     // Estado para produtos normais (estoque inicial, não cobrados)
     const [estoque, setEstoque] = useState<Record<string, string>>({});
@@ -22,7 +25,11 @@ import { removeProductStock } from '../services/api';
     const [pdfUri, setPdfUri] = useState<string | null>(null);
     // Estado para assinatura
     const [signatureDataUrl, setSignatureDataUrl] = useState<string | undefined>(undefined);
-    const [stockApplied, setStockApplied] = useState(false);
+    const [stockSent, setStockSent] = useState(false);
+    const [isSendingStock, setIsSendingStock] = useState(false);
+    const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+    const [clientSaved, setClientSaved] = useState(false);
+    const requiresSignature = Platform.OS !== 'web';
   
     function handleChangeEstoque(id: string, value: string) {
       setEstoque(prev => ({ ...prev, [id]: value }));
@@ -31,43 +38,158 @@ import { removeProductStock } from '../services/api';
       setBancada(prev => ({ ...prev, [id]: value }));
     }
   
-    async function handleGerarPDF() {
+    function getSelectedItems() {
+      const selectedProdutos = Object.entries(estoque).filter(([_, v]) => Number(v || 0) > 0);
+      const selectedBancada = Object.entries(bancada).filter(([_, v]) => Number(v || 0) > 0);
+      return { selectedProdutos, selectedBancada };
+    }
+
+    function isFormReady() {
+      const { selectedProdutos, selectedBancada } = getSelectedItems();
+      return selectedProdutos.length > 0 || selectedBancada.length > 0;
+    }
+
+    function validateRequiredFields() {
+      if (!isFormReady()) {
+        Alert.alert(
+          'Campos obrigatórios',
+          'Motivo: nenhum item de estoque foi informado.\n\nComo ajustar: preencha ao menos uma quantidade maior que zero em Produtos ou Bancada.',
+        );
+        return false;
+      }
+
+      if (requiresSignature && !signatureDataUrl) {
+        Alert.alert(
+          'Campos obrigatórios',
+          'Motivo: assinatura do responsável não foi informada.\n\nComo ajustar: assine no campo "Assinatura do responsável" antes de enviar.',
+        );
+        return false;
+      }
+
+      return true;
+    }
+
+    async function ensureDraftClientSaved() {
+      if (clientSaved) {
+        return;
+      }
+
+      const draftClient = route.params?.draftClient;
+      if (!draftClient) {
+        return;
+      }
+
+      await saveClient(draftClient);
+      setClientSaved(true);
+    }
+
+    async function applyInitialStockIfNeeded() {
+      if (stockSent) {
+        return true;
+      }
+
+      const { selectedProdutos, selectedBancada } = getSelectedItems();
+      const targetClientId = route.params?.draftClient?.id;
+
+      for (const [productId, value] of selectedProdutos) {
+        const qty = Number(value || 0);
+        const ok = await removeProductStock(productId, qty);
+        if (!ok) {
+          Alert.alert(
+            'Falha ao enviar estoque',
+            `Motivo: estoque insuficiente para o produto ${productId}.\n\nComo ajustar: reduza a quantidade informada ou reabasteça o estoque principal antes de reenviar.`,
+          );
+          return false;
+        }
+      }
+
+      for (const [productId, value] of selectedBancada) {
+        const qty = Number(value || 0);
+        const ok = await removeProductStock(productId, qty);
+        if (!ok) {
+          Alert.alert(
+            'Falha ao enviar estoque',
+            `Motivo: estoque insuficiente para o item de bancada ${productId}.\n\nComo ajustar: revise a quantidade de bancada ou ajuste o estoque principal.`,
+          );
+          return false;
+        }
+      }
+
+      if (targetClientId) {
+        await addClientInitialStock(targetClientId, { estoque, bancada });
+      }
+
+      setStockSent(true);
+      return true;
+    }
+
+    async function handleEnviarNovoEstoque() {
+      if (stockSent) {
+        Alert.alert('Estoque já enviado', 'O estoque inicial deste cliente já foi enviado nesta operação.');
+        return;
+      }
+
+      if (!validateRequiredFields()) {
+        return;
+      }
+
+      setIsSendingStock(true);
       try {
-        if (!stockApplied) {
-          const selectedProdutos = Object.entries(estoque).filter(([_, v]) => Number(v || 0) > 0);
-          const selectedBancada = Object.entries(bancada).filter(([_, v]) => Number(v || 0) > 0);
+        await ensureDraftClientSaved();
+        const sent = await applyInitialStockIfNeeded();
+        if (!sent) {
+          return;
+        }
+        Alert.alert('Sucesso', 'Novo estoque do cliente enviado com sucesso.');
+      } catch (error) {
+        Alert.alert(
+          'Falha ao enviar estoque',
+          `Motivo: ${(error as Error)?.message || 'erro inesperado no envio.'}\n\nComo ajustar: verifique a conexão e tente novamente em alguns segundos.`,
+        );
+      } finally {
+        setIsSendingStock(false);
+      }
+    }
 
-          for (const [productId, value] of selectedProdutos) {
-            const qty = Number(value || 0);
-            const ok = await removeProductStock(productId, qty);
-            if (!ok) {
-              Alert.alert('Erro', `Estoque insuficiente para saída inicial do produto ${productId}.`);
-              return;
-            }
-          }
+    async function handleGerarPDF() {
+      if (!validateRequiredFields()) {
+        return;
+      }
 
-          for (const [productId, value] of selectedBancada) {
-            const qty = Number(value || 0);
-            const ok = await removeProductStock(productId, qty);
-            if (!ok) {
-              Alert.alert('Erro', `Estoque insuficiente para saída inicial de bancada ${productId}.`);
-              return;
-            }
-          }
+      setIsGeneratingPdf(true);
+      try {
+        await ensureDraftClientSaved();
 
-          setStockApplied(true);
+        const sent = await applyInitialStockIfNeeded();
+        if (!sent) {
+          return;
         }
 
-        // Gera o PDF usando utilitário igual FinalizarMedicaoScreen
         const uri = await generateEstoquePDF({ estoque, bancada, signatureDataUrl });
         setPdfUri(uri);
+
         if (await Sharing.isAvailableAsync()) {
           await Sharing.shareAsync(uri);
         } else {
-          Alert.alert('PDF gerado!', 'O PDF foi gerado, mas o compartilhamento não está disponível neste dispositivo.');
+          Alert.alert(
+            'PDF gerado',
+            'Motivo: o compartilhamento não está disponível neste dispositivo.\n\nComo ajustar: abra o PDF por um gerenciador de arquivos para enviar manualmente.',
+          );
         }
+
+        Alert.alert('Sucesso', 'PDF gerado e estoque inicial cadastrado com sucesso.', [
+          {
+            text: 'OK',
+            onPress: () => navigation.navigate('Clientes'),
+          },
+        ]);
       } catch (error) {
-        Alert.alert('Erro ao gerar PDF', 'Ocorreu um erro ao gerar o PDF.');
+        Alert.alert(
+          'Erro ao gerar PDF',
+          `Motivo: ${(error as Error)?.message || 'falha na geração do arquivo.'}\n\nComo ajustar: confirme conexão estável e tente novamente. Se persistir, feche e abra o app.`,
+        );
+      } finally {
+        setIsGeneratingPdf(false);
       }
     }
   
@@ -75,6 +197,15 @@ import { removeProductStock } from '../services/api';
     const totalProdutos = Object.values(estoque).reduce((acc, v) => acc + (parseInt(v) || 0), 0);
     const totalBancadaQtd = Object.values(bancada).reduce((acc, v) => acc + (parseInt(v) || 0), 0);
     const totalBancadaValor = PRODUTOS_BANCADA.reduce((acc, p) => acc + ((parseInt(bancada[p.id]) || 0) * p.preco), 0);
+    const missingRequirements: string[] = [];
+
+    if (!isFormReady()) {
+      missingRequirements.push('informar ao menos 1 item de estoque');
+    }
+
+    if (requiresSignature && !signatureDataUrl) {
+      missingRequirements.push('coletar assinatura do responsável');
+    }
 
     return (
       <View style={{ flex: 1, backgroundColor: '#fff' }}>
@@ -164,9 +295,28 @@ import { removeProductStock } from '../services/api';
             {totalBancadaQtd > 0 && (
               <Text style={{ color: '#991B1B', fontSize: 16, fontWeight: '700' }}>Valor total dos produtos de bancada: R$ {totalBancadaValor.toFixed(2).replace('.', ',')}</Text>
             )}
+            <Text style={{ color: stockSent ? '#16A34A' : '#B45309', fontSize: 14, marginTop: 8 }}>
+              {stockSent ? 'Status: estoque inicial enviado.' : 'Status: estoque inicial pendente de envio.'}
+            </Text>
           </View>
           <SignaturePad label="Assinatura do responsável" onChange={setSignatureDataUrl} />
-          <Button title="Gerar PDF do Estoque" onPress={handleGerarPDF} style={{ marginTop: 8 }} />
+          <Button
+            title={isSendingStock ? 'Enviando...' : stockSent ? 'Estoque Enviado' : 'Enviar Novo Estoque do Cliente'}
+            onPress={handleEnviarNovoEstoque}
+            disabled={isSendingStock || stockSent || isGeneratingPdf}
+            style={{ marginTop: 8 }}
+          />
+          <Button
+            title={isGeneratingPdf ? 'Gerando PDF...' : 'Gerar PDF do Estoque'}
+            onPress={handleGerarPDF}
+            disabled={isGeneratingPdf || isSendingStock}
+            style={{ marginTop: 8 }}
+          />
+          {missingRequirements.length > 0 && (
+            <Text style={{ color: '#B45309', fontSize: 13, marginTop: 8 }}>
+              Pendente para concluir: {missingRequirements.join(' • ')}.
+            </Text>
+          )}
         </ScrollView>
       </View>
     );

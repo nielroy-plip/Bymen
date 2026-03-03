@@ -297,7 +297,8 @@ let HomologService = class HomologService {
         await this.ensureInventoryLocation(locationId);
         await this.ensureProduct(dto);
         const saldo = await this.getCurrentBalance(dto.productId, locationId);
-        if (dto.type === 'SAIDA' && saldo < dto.quantity) {
+        const allowNegativeInHomolog = process.env.NODE_ENV === 'homolog';
+        if (dto.type === 'SAIDA' && saldo < dto.quantity && !allowNegativeInHomolog) {
             throw new common_1.BadRequestException('Estoque insuficiente para saída');
         }
         const movement = await this.prisma.inventoryMovement.create({

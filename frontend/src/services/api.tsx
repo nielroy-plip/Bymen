@@ -153,6 +153,32 @@ type UserRegistryItem = {
   phone?: string;
 };
 
+function formatUserFacingError(rawMessage: string, status?: number) {
+  const normalized = (rawMessage || '').toLowerCase();
+
+  if (normalized.includes('network request failed') || normalized.includes('failed to fetch')) {
+    return 'Motivo: não foi possível conectar ao servidor. Como ajustar: verifique sua internet e confirme se o backend está online.';
+  }
+
+  if (status === 400 || normalized.includes('validation failed')) {
+    return `Motivo: dados inválidos enviados para homologação (${rawMessage}). Como ajustar: revise os campos obrigatórios e tente novamente.`;
+  }
+
+  if (status === 401 || normalized.includes('credenciais inválidas')) {
+    return 'Motivo: autenticação inválida. Como ajustar: confira usuário/e-mail e senha, depois tente novamente.';
+  }
+
+  if (status === 409 || normalized.includes('já cadastrado')) {
+    return `Motivo: conflito de cadastro (${rawMessage}). Como ajustar: use outro valor para o campo informado e tente novamente.`;
+  }
+
+  if (status === 503 || normalized.includes('service unavailable')) {
+    return 'Motivo: serviço indisponível no momento. Como ajustar: aguarde alguns segundos e tente novamente.';
+  }
+
+  return `Motivo: ${rawMessage || 'erro inesperado no servidor'}. Como ajustar: tente novamente e, se persistir, valide a configuração da homologação.`;
+}
+
 async function readStock(): Promise<Record<string, number>> {
   const raw = await AsyncStorage.getItem(STOCK_KEY);
   if (!raw) return {};
@@ -258,37 +284,45 @@ export async function saveCurrentUserProfile(partial: Partial<AppUser>) {
 }
 
 async function homologRequest<T = any>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    headers: {
-      'Content-Type': 'application/json',
-      ...(init?.headers || {}),
-    },
-    ...init,
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE_URL}${path}`, {
+      headers: {
+        'Content-Type': 'application/json',
+        ...(init?.headers || {}),
+      },
+      ...init,
+    });
+  } catch (error) {
+    throw new Error(formatUserFacingError((error as Error)?.message || 'falha de conexão'));
+  }
 
   if (!response.ok) {
     const txt = await response.text();
+    let rawMessage = txt || `HTTP ${response.status}`;
+
     try {
       const parsed = txt ? JSON.parse(txt) : null;
-      const message = Array.isArray(parsed?.message)
+      rawMessage = Array.isArray(parsed?.message)
         ? parsed.message.join(', ')
         : parsed?.message || parsed?.error || txt;
-      throw new Error(message || `HTTP ${response.status}`);
     } catch {
-      throw new Error(txt || `HTTP ${response.status}`);
+      rawMessage = txt || `HTTP ${response.status}`;
     }
+
+    throw new Error(formatUserFacingError(rawMessage, response.status));
   }
 
   const text = await response.text();
   return (text ? JSON.parse(text) : {}) as T;
 }
 
-export async function registerUser(input: { email: string; password: string; username?: string; phone?: string }) {
+export async function registerUser(input: { email: string; password: string; username: string; phone: string }) {
   const payload = {
     email: input.email.trim().toLowerCase(),
     password: input.password,
-    username: input.username?.trim() || undefined,
-    phone: input.phone?.trim() || undefined,
+    username: input.username.trim(),
+    phone: input.phone.trim(),
   };
 
   return homologRequest('/homolog/users/register', {
@@ -342,6 +376,15 @@ export async function listClients() {
 }
 
 export async function saveClient(client: Client) {
+  const payload = {
+    id: client.id,
+    nome: client.nome,
+    telefone: client.telefone,
+    cnpjCpf: client.cnpjCpf || '',
+    endereco: client.endereco || '',
+    responsavel: client.responsavel || '',
+  };
+
   const all = await readClients();
   const existing = all.find(c => c.id === client.id);
   if (existing) {
@@ -349,7 +392,7 @@ export async function saveClient(client: Client) {
     await writeClients(updated.filter(c => !CLIENTS.find(base => base.id === c.id)));
     await homologRequest('/homolog/clients/upsert', {
       method: 'POST',
-      body: JSON.stringify(client),
+      body: JSON.stringify(payload),
     });
     return client;
   }
@@ -357,7 +400,7 @@ export async function saveClient(client: Client) {
   await writeClients(next);
   await homologRequest('/homolog/clients/upsert', {
     method: 'POST',
-    body: JSON.stringify(client),
+    body: JSON.stringify(payload),
   });
   return client;
 }
@@ -407,7 +450,48 @@ export async function listProducts() {
 export async function listProductsForClient(clientId: string) {
   const clientStock = await readClientStock();
   const stock = clientStock[clientId] || {};
-  return PRODUCTS.map((p) => ({ ...p, estoque: stock[p.id] ?? p.estoque }));
+  const allMeasurements = await readAll();
+  const latestMeasurement = allMeasurements
+    .filter((m) => m.clientId === clientId)
+    .sort((a, b) => {
+      const ta = new Date(a.updatedAt || a.createdAt || a.dateTime || 0).getTime();
+      const tb = new Date(b.updatedAt || b.createdAt || b.dateTime || 0).getTime();
+      return tb - ta;
+    })[0];
+
+  const latestMeasurementStock: Record<string, number> = {};
+  (latestMeasurement?.medicaoRows || []).forEach((row) => {
+    latestMeasurementStock[row.id] = row.novoEstoque;
+  });
+
+  return PRODUCTS.map((p) => ({
+    ...p,
+    estoque: stock[p.id] ?? latestMeasurementStock[p.id] ?? p.estoque,
+  }));
+}
+
+export async function addClientInitialStock(
+  clientId: string,
+  payload: { estoque: Record<string, string>; bancada?: Record<string, string> },
+) {
+  const clientStock = await readClientStock();
+  const current = { ...(clientStock[clientId] || {}) };
+
+  const applyEntries = (entries: Record<string, string> | undefined) => {
+    Object.entries(entries || {}).forEach(([productId, value]) => {
+      const qty = Number(value || 0);
+      if (qty > 0) {
+        current[productId] = (current[productId] || 0) + qty;
+      }
+    });
+  };
+
+  applyEntries(payload.estoque);
+  applyEntries(payload.bancada);
+
+  clientStock[clientId] = current;
+  await writeClientStock(clientStock);
+  return current;
 }
 
 export async function addProductStock(productId: string, quantity: number) {

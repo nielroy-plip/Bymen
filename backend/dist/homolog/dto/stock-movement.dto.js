@@ -35,32 +35,30 @@ __decorate([
     __metadata("design:type", String)
 ], StockMovementDto.prototype, "locationId", void 0);
 __decorate([
-    (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsNumber)(),
     __metadata("design:type", Number)
 ], StockMovementDto.prototype, "unitPrice", void 0);
 __decorate([
-    (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsString)(),
+    (0, class_validator_1.MinLength)(2),
     __metadata("design:type", String)
 ], StockMovementDto.prototype, "productName", void 0);
 __decorate([
-    (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsString)(),
+    (0, class_validator_1.MinLength)(2),
     __metadata("design:type", String)
 ], StockMovementDto.prototype, "productLine", void 0);
 __decorate([
-    (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsString)(),
+    (0, class_validator_1.MinLength)(1),
     __metadata("design:type", String)
 ], StockMovementDto.prototype, "productCapacity", void 0);
 __decorate([
-    (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsString)(),
+    (0, class_validator_1.MinLength)(2),
     __metadata("design:type", String)
 ], StockMovementDto.prototype, "productType", void 0);
 __decorate([
-    (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsNumber)(),
     __metadata("design:type", Number)
 ], StockMovementDto.prototype, "suggestedPrice", void 0);

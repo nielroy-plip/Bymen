@@ -1,4 +1,4 @@
-import { IsOptional, IsString, MinLength } from 'class-validator';
+import { IsString, MinLength } from 'class-validator';
 
 export class UpsertClientDto {
   @IsString()
@@ -13,15 +13,15 @@ export class UpsertClientDto {
   @MinLength(8)
   telefone: string;
 
-  @IsOptional()
   @IsString()
-  cnpjCpf?: string;
+  @MinLength(11)
+  cnpjCpf: string;
 
-  @IsOptional()
   @IsString()
-  endereco?: string;
+  @MinLength(5)
+  endereco: string;
 
-  @IsOptional()
   @IsString()
-  responsavel?: string;
+  @MinLength(3)
+  responsavel: string;
 }

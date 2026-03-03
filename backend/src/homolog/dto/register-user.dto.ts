@@ -4,13 +4,13 @@ export class RegisterUserDto {
   @IsEmail()
   email: string;
 
-  @IsOptional()
   @IsString()
-  username?: string;
+  @MinLength(3)
+  username: string;
 
-  @IsOptional()
   @IsString()
-  phone?: string;
+  @MinLength(10)
+  phone: string;
 
   @IsString()
   @MinLength(6)

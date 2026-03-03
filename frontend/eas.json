@@ -11,7 +11,8 @@
     "preview": {
       "distribution": "internal",
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://site--bymen--8f4tg2jylx4z.code.run/api"
+        "EXPO_PUBLIC_API_URL": "https://site--bymen--8f4tg2jylx4z.code.run/api",
+        "EXPO_PUBLIC_ENABLE_BLING": "false"
       }
     },
     "production": {

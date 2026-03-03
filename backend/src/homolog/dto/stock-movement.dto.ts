@@ -17,27 +17,25 @@ export class StockMovementDto {
   @IsString()
   locationId?: string;
 
-  @IsOptional()
   @IsNumber()
-  unitPrice?: number;
+  unitPrice: number;
 
-  @IsOptional()
   @IsString()
-  productName?: string;
+  @MinLength(2)
+  productName: string;
 
-  @IsOptional()
   @IsString()
-  productLine?: string;
+  @MinLength(2)
+  productLine: string;
 
-  @IsOptional()
   @IsString()
-  productCapacity?: string;
+  @MinLength(1)
+  productCapacity: string;
 
-  @IsOptional()
   @IsString()
-  productType?: string;
+  @MinLength(2)
+  productType: string;
 
-  @IsOptional()
   @IsNumber()
-  suggestedPrice?: number;
+  suggestedPrice: number;
 }

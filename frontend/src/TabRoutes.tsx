@@ -7,7 +7,14 @@ import ClientesScreen from './screens/ClientesScreen';
 import EstoqueScreen from './screens/EstoqueScreen';
 import RelatoriosScreen from './screens/RelatoriosScreen';
 
-const Tab = createBottomTabNavigator();
+type TabParamList = {
+  Dashboard: undefined;
+  Clientes: undefined;
+  Estoque: undefined;
+  Relatorios: undefined;
+};
+
+const Tab = createBottomTabNavigator<TabParamList>();
 
 export default function TabRoutes() {
   return (
@@ -19,24 +26,26 @@ export default function TabRoutes() {
         tabBarInactiveTintColor: '#6B7280',
         tabBarStyle: { backgroundColor: '#fff', borderTopWidth: 1, borderTopColor: '#E5E7EB' },
         tabBarIcon: ({ color, size }) => {
-          let iconName = 'home';
-          let IconComponent = Ionicons;
-          if (route.name === 'Dashboard') iconName = 'home';
-          if (route.name === 'Clientes') iconName = 'people';
           if (route.name === 'Estoque') {
-            // Usar ícone de bancada customizado (MaterialCommunityIcons: table-furniture)
-            IconComponent = MaterialCommunityIcons;
-            iconName = 'table-furniture';
+            return <MaterialCommunityIcons name="table-furniture" size={size} color={color} />;
           }
-          if (route.name === 'Relatorios') iconName = 'stats-chart';
-          return <IconComponent name={iconName} size={size} color={color} />;
+
+          if (route.name === 'Clientes') {
+            return <Ionicons name="people" size={size} color={color} />;
+          }
+
+          if (route.name === 'Relatorios') {
+            return <Ionicons name="stats-chart" size={size} color={color} />;
+          }
+
+          return <Ionicons name="home" size={size} color={color} />;
         },
       })}
     >
-      <Tab.Screen name="Dashboard" component={DashboardScreen} options={{ tabBarLabel: 'Dashboard' }} />
-      <Tab.Screen name="Clientes" component={ClientesScreen} options={{ tabBarLabel: 'Clientes' }} />
-      <Tab.Screen name="Estoque" component={EstoqueScreen} options={{ tabBarLabel: 'Estoque' }} />
-      <Tab.Screen name="Relatorios" component={RelatoriosScreen} options={{ tabBarLabel: 'Relatórios' }} />
+      <Tab.Screen name="Dashboard" component={DashboardScreen as React.ComponentType<any>} options={{ tabBarLabel: 'Dashboard' }} />
+      <Tab.Screen name="Clientes" component={ClientesScreen as React.ComponentType<any>} options={{ tabBarLabel: 'Clientes' }} />
+      <Tab.Screen name="Estoque" component={EstoqueScreen as React.ComponentType<any>} options={{ tabBarLabel: 'Estoque' }} />
+      <Tab.Screen name="Relatorios" component={RelatoriosScreen as React.ComponentType<any>} options={{ tabBarLabel: 'Relatórios' }} />
     </Tab.Navigator>
   );
 }

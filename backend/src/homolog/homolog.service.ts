@@ -304,7 +304,8 @@ export class HomologService {
     await this.ensureProduct(dto);
 
     const saldo = await this.getCurrentBalance(dto.productId, locationId);
-    if (dto.type === 'SAIDA' && saldo < dto.quantity) {
+    const allowNegativeInHomolog = process.env.NODE_ENV === 'homolog';
+    if (dto.type === 'SAIDA' && saldo < dto.quantity && !allowNegativeInHomolog) {
       throw new BadRequestException('Estoque insuficiente para saída');
     }
 

@@ -42,7 +42,18 @@ export type RootStackParamList = {
   EnviarEstoque: { clientId: string } | undefined;
   ImportarEstoque: undefined;
   CadastrarCliente: { clientId?: string } | undefined;
-  NovoEstoque: undefined;
+  NovoEstoque:
+    | {
+        draftClient?: {
+          id: string;
+          nome: string;
+          cnpjCpf: string;
+          endereco: string;
+          responsavel: string;
+          telefone: string;
+        };
+      }
+    | undefined;
   Relatorios: undefined;
   ConfiguracoesUsuario: undefined;
   PendenciasSync: undefined;

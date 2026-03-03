@@ -30,18 +30,18 @@ __decorate([
     __metadata("design:type", String)
 ], UpsertClientDto.prototype, "telefone", void 0);
 __decorate([
-    (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsString)(),
+    (0, class_validator_1.MinLength)(11),
     __metadata("design:type", String)
 ], UpsertClientDto.prototype, "cnpjCpf", void 0);
 __decorate([
-    (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsString)(),
+    (0, class_validator_1.MinLength)(5),
     __metadata("design:type", String)
 ], UpsertClientDto.prototype, "endereco", void 0);
 __decorate([
-    (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsString)(),
+    (0, class_validator_1.MinLength)(3),
     __metadata("design:type", String)
 ], UpsertClientDto.prototype, "responsavel", void 0);
 //# sourceMappingURL=upsert-client.dto.js.map

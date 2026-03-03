@@ -83,7 +83,7 @@ export default function CriarMedicaoScreen({ navigation, route }: Props) {
         listProductsForClient(c.id)
           .then((p) => {
             setProducts(p);
-            // Preenche os campos de medição com valores de exemplo
+            // Preenche os campos com o estoque atual do cliente
             const medicaoInicial: Record<string, MedicaoRow> = {};
             p.forEach((prod) => {
               medicaoInicial[prod.id] = {
@@ -94,11 +94,11 @@ export default function CriarMedicaoScreen({ navigation, route }: Props) {
                 preco: prod.preco,
                 precoSugestao: prod.precoSugestao,
                 estoqueAtual: prod.estoque,
-                vendidos: 2, // valor baixo de exemplo
+                vendidos: 0,
                 repostos: 0,
-                diferenca: 2, // vendido - reposto
-                novoEstoque: prod.estoque - 2,
-                valorMedicao: prod.preco * 2,
+                diferenca: prod.estoque,
+                novoEstoque: prod.estoque,
+                valorMedicao: 0,
                 produtosRetirados: 0
               };
             });

@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useEffect } from 'react';
-import { View, Text, ScrollView, TextInput, Alert, Linking } from 'react-native';
+import { View, Text, ScrollView, TextInput, Alert } from 'react-native';
 import { TouchableOpacity } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../routes';
@@ -10,6 +10,7 @@ import {
   saveMeasurement,
   updateMeasurementPdf,
   listClients,
+  listProducts,
   Measurement,
   enqueueSyncPending,
   updateMeasurementSyncStatus,
@@ -25,6 +26,7 @@ import * as Sharing from 'expo-sharing';
 import OperationContextHeader from '../components/OperationContextHeader';
 
 const BACKEND_URL = API_BASE_URL;
+const ENABLE_BLING_SYNC = String(process.env.EXPO_PUBLIC_ENABLE_BLING || '').toLowerCase() === 'true';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'FinalizarMedicao'>;
 
@@ -57,13 +59,37 @@ export default function FinalizarMedicaoScreen({ navigation, route }: Props) {
   const [signatureDataUrl, setSignatureDataUrl] = useState<string | undefined>(signatureParam);
   const [isFinalizando, setIsFinalizando] = useState(false);
   const [finalizedMeasurementId, setFinalizedMeasurementId] = useState<string | undefined>(undefined);
+  const [distributorStockByProductId, setDistributorStockByProductId] = useState<Record<string, number>>({});
 
   useEffect(() => {
-    listClients().then((clients) => {
+    Promise.all([listClients(), listProducts()]).then(([clients, products]) => {
       const c = clients.find((x) => x.id === clientId);
       setClient(c);
+
+      const stockMap: Record<string, number> = {};
+      products.forEach((p: any) => {
+        stockMap[p.id] = Number(p.estoque ?? 0);
+      });
+      setDistributorStockByProductId(stockMap);
     });
   }, [clientId]);
+
+  const bonusStockIssues = useMemo(() => {
+    return (bonusRows as any[])
+      .filter((row) => Number(row.quantidadeComprada ?? 0) > 0)
+      .map((row) => {
+        const required = Number(row.quantidadeComprada ?? 0);
+        const available = Number(distributorStockByProductId[row.id] ?? 0);
+        return {
+          id: row.id,
+          nome: row.nome,
+          required,
+          available,
+          isInsufficient: required > available,
+        };
+      })
+      .filter((item) => item.isInsufficient);
+  }, [bonusRows, distributorStockByProductId]);
 
   // ========================================
   // GERAR PDF CONSOLIDADO
@@ -128,20 +154,33 @@ export default function FinalizarMedicaoScreen({ navigation, route }: Props) {
       if (await Sharing.isAvailableAsync()) {
         await Sharing.shareAsync(uri);
       } else {
-        await Linking.openURL(uri);
+        Alert.alert(
+          'PDF gerado',
+          'Motivo: compartilhamento indisponível neste dispositivo.\n\nComo ajustar: abra o arquivo PDF manualmente no gerenciador de arquivos.',
+        );
       }
       return uri;
     } catch (error) {
       console.error('Erro ao gerar PDF:', error);
-      Alert.alert('Erro', 'Não foi possível gerar o PDF: ' + (error as Error).message);
+      Alert.alert(
+        'Erro ao gerar PDF',
+        `Motivo: ${(error as Error).message || 'falha durante a geração do documento.'}\n\nComo ajustar: verifique conexão/armazenamento e tente novamente.`,
+      );
       return undefined;
     }
   }
 
   async function handleEnviarWhatsApp() {
-    const currentUri = pdfUri || (await handleGerarPDF());
-    if (currentUri) {
-      await sharePdf(currentUri);
+    try {
+      const currentUri = pdfUri || (await handleGerarPDF());
+      if (currentUri) {
+        await sharePdf(currentUri);
+      }
+    } catch (error) {
+      Alert.alert(
+        'Falha ao enviar no WhatsApp',
+        `Motivo: ${(error as Error)?.message || 'não foi possível compartilhar o arquivo.'}\n\nComo ajustar: confirme o WhatsApp instalado e tente novamente.`,
+      );
     }
   }
 
@@ -152,6 +191,14 @@ export default function FinalizarMedicaoScreen({ navigation, route }: Props) {
     }
 
     if (isFinalizando) {
+      return;
+    }
+
+    if (bonusStockIssues.length > 0) {
+      Alert.alert(
+        'Bonificação com saldo insuficiente',
+        `Motivo: há produtos bonificados acima do estoque disponível do distribuidor.\n\nComo ajustar: revise as quantidades em bonificação e tente novamente.`,
+      );
       return;
     }
 
@@ -219,6 +266,20 @@ export default function FinalizarMedicaoScreen({ navigation, route }: Props) {
 
       await saveMeasurement(measurement);
       setFinalizedMeasurementId(medicaoId);
+
+      if (!ENABLE_BLING_SYNC) {
+        Alert.alert(
+          'Sucesso',
+          'Medição finalizada e estoque atualizado com sucesso.',
+          [
+            {
+              text: 'OK',
+              onPress: () => navigation.replace('ClienteDetalhes', { clientId }),
+            },
+          ]
+        );
+        return;
+      }
 
       const itemsForBling = medicaoRows
         .filter((item: any) => (item.vendidos ?? 0) > 0)
@@ -300,7 +361,10 @@ export default function FinalizarMedicaoScreen({ navigation, route }: Props) {
       }
     } catch (error) {
       console.error('Erro ao finalizar medição:', error);
-      Alert.alert('Erro', 'Não foi possível finalizar a medição.');
+      Alert.alert(
+        'Falha ao finalizar medição',
+        `Motivo: ${(error as Error)?.message || 'erro inesperado durante a finalização.'}\n\nComo ajustar: revise os campos obrigatórios e tente novamente.`,
+      );
     } finally {
       setIsFinalizando(false);
     }
@@ -471,8 +535,32 @@ export default function FinalizarMedicaoScreen({ navigation, route }: Props) {
                 <Text style={{ color: '#6B7280', fontSize: fontSize.small }}>
                   Quantidade: {r.quantidadeComprada}
                 </Text>
+                <Text
+                  style={{
+                    color:
+                      Number(r.quantidadeComprada ?? 0) > Number(distributorStockByProductId[r.id] ?? 0)
+                        ? '#DC2626'
+                        : '#059669',
+                    fontSize: fontSize.small,
+                    fontWeight: '600',
+                  }}
+                >
+                  Saldo distribuidor: {Number(distributorStockByProductId[r.id] ?? 0)}
+                </Text>
               </View>
             ))
+          )}
+          {bonusStockIssues.length > 0 && (
+            <View style={{ marginTop: 10, padding: 10, borderRadius: 8, backgroundColor: '#FEE2E2', borderWidth: 1, borderColor: '#FCA5A5' }}>
+              <Text style={{ color: '#B91C1C', fontWeight: '700', marginBottom: 4 }}>
+                Pendências de bonificação antes de finalizar
+              </Text>
+              {bonusStockIssues.map((issue) => (
+                <Text key={issue.id} style={{ color: '#B91C1C', fontSize: fontSize.small }}>
+                  {issue.nome}: solicitado {issue.required} • disponível {issue.available}
+                </Text>
+              ))}
+            </View>
           )}
           <View style={{ marginTop: 8, alignItems: 'flex-end' }}>
             <Text style={{ fontSize: fontSize.base, fontWeight: '700', color: '#059669' }}>
@@ -563,7 +651,7 @@ export default function FinalizarMedicaoScreen({ navigation, route }: Props) {
           title={isFinalizando ? 'Finalizando medição...' : 'Finalizar medição'}
           icon="checkmark-circle-outline"
           onPress={handleFinalizarMedicao}
-          disabled={isFinalizando}
+          disabled={isFinalizando || bonusStockIssues.length > 0}
         />
         <View style={{ height: 12 }} />
         <Button title="Gerar PDF" icon="document-outline" onPress={handleGerarPDF} />
