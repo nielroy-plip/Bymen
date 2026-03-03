@@ -13,7 +13,7 @@ import * as Sharing from 'expo-sharing';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Ionicons } from '@expo/vector-icons';
 import OperationContextHeader from '../components/OperationContextHeader';
-import { removeProductStock } from '../services/api';
+import { addClientInitialStock, removeProductStock } from '../services/api';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'EnviarEstoque'>;
 
@@ -54,6 +54,11 @@ export default function EnviarEstoqueScreen({ navigation, route }: Props) {
         const selectedProdutos = rowsArray.filter((row: any) => Number(row.estoqueAtual ?? 0) > 0);
         const selectedBancada = bancadaRowsArray.filter((row: any) => Number(row.estoqueAtual ?? 0) > 0);
 
+        if (!clientId) {
+          Alert.alert('Erro', 'Cliente não encontrado para aplicar reposição extra.');
+          return;
+        }
+
         for (const row of selectedProdutos) {
           const qty = Number(row.estoqueAtual ?? 0);
           const ok = await removeProductStock(row.id, qty);
@@ -72,6 +77,18 @@ export default function EnviarEstoqueScreen({ navigation, route }: Props) {
           }
         }
 
+        const estoque: Record<string, string> = {};
+        selectedProdutos.forEach((row: any) => {
+          estoque[row.id] = String(Number(row.estoqueAtual ?? 0));
+        });
+
+        const bancada: Record<string, string> = {};
+        selectedBancada.forEach((row: any) => {
+          bancada[row.id] = String(Number(row.estoqueAtual ?? 0));
+        });
+
+        await addClientInitialStock(clientId, { estoque, bancada });
+
         setStockApplied(true);
       }
 
@@ -79,7 +96,12 @@ export default function EnviarEstoqueScreen({ navigation, route }: Props) {
       rowsArray.forEach((row: any) => { estoque[row.id] = row.estoqueAtual?.toString() || '0'; });
       const bancada: Record<string, string> = {};
       bancadaRowsArray.forEach((row: any) => { bancada[row.id] = row.estoqueAtual?.toString() || '0'; });
-      const uri = await generateEstoquePDF({ estoque, bancada });
+      const uri = await generateEstoquePDF({
+        estoque,
+        bancada,
+        clientName: client?.nome || 'Barbearia',
+        dateTime,
+      });
       setPdfUri(uri);
       Alert.alert('Sucesso', 'PDF gerado com sucesso!');
       if (await Sharing.isAvailableAsync()) {
@@ -129,10 +151,10 @@ export default function EnviarEstoqueScreen({ navigation, route }: Props) {
         />
 
         {activeTab === 'produtos' && PRODUCTS.map((p) => (
-          <ProductRow key={p.id} product={p} onChange={handleRowChange} isStockOnly showSugestao />
+          <ProductRow key={p.id} product={p} onChange={handleRowChange} isStockOnly initialEstoque={0} showSugestao />
         ))}
         {activeTab === 'bancada' && PRODUTOS_BANCADA.map((p) => (
-          <ProductRow key={p.id} product={p} onChange={handleBancadaRowChange} isStockOnly showSugestao={false} />
+          <ProductRow key={p.id} product={p} onChange={handleBancadaRowChange} isStockOnly initialEstoque={0} showSugestao={false} />
         ))}
 
         <View style={{ marginTop: 24, gap: 12 }}>

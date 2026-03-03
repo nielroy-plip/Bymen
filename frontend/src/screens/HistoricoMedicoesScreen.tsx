@@ -208,11 +208,14 @@ export default function HistoricoMedicoesScreen({ navigation }: Props) {
                       clientId: it.clientId,
                       medicaoRows: it.medicaoRows || [],
                       bancadaRows: it.bancadaRows || [],
+                      bonusRows: it.bonusRows || [],
                       valorMedicao: it.valorMedicao || 0,
                       valorBancada: it.valorBancada || 0,
                       totalGeral: it.totalGeral || 0,
                       dateTime: it.dateTime,
                       responsavel: it.responsavel,
+                      observacoes: it.observacoes,
+                      pagamentoPix: it.pagamentoPix,
                       signatureDataUrl: it.signatureDataUrl
                     })
                   }

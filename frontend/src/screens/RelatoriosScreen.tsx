@@ -1,14 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text, ScrollView, Dimensions, Modal, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { View, Text, ScrollView, Modal, TouchableOpacity, ActivityIndicator, useWindowDimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { LineChart, BarChart } from 'react-native-chart-kit';
+import { BarChart } from 'react-native-chart-kit';
 import { listClients, listMeasurements, listProducts, Measurement } from '../services/api';
 import { Client } from '../data/clients';
 
 const monthNames = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
-
-const screenWidth = Dimensions.get('window').width;
-const isSmallScreen = screenWidth < 400;
 
 function getMonthKey(date: Date) {
   const y = date.getFullYear();
@@ -27,16 +24,27 @@ function parseMeasurementDate(dateTime: string): Date | null {
   return new Date(year, month, day);
 }
 
+function getLinhaColor(linha?: string) {
+  const normalized = String(linha || '').toLowerCase();
+  if (normalized.includes('wood')) return '#8B5A2B';
+  if (normalized.includes('ocean')) return '#0EA5E9';
+  return '#6B7280';
+}
+
 export default function RelatoriosScreen() {
+  const { width: screenWidth } = useWindowDimensions();
+  const isSmallScreen = screenWidth < 400;
   const [barbearias, setBarbearias] = useState<Client[]>([]);
   const [measurements, setMeasurements] = useState<Measurement[]>([]);
   const [products, setProducts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [barbeariaId, setBarbeariaId] = useState<string>('');
   const [modalVisible, setModalVisible] = useState(false);
+  const [modalFiltroMedicaoVisible, setModalFiltroMedicaoVisible] = useState(false);
+  const [modalFiltroBancadaVisible, setModalFiltroBancadaVisible] = useState(false);
   const [periodo, setPeriodo] = useState<'12m' | '6m' | '3m'>('12m');
-  const [produtoFiltro, setProdutoFiltro] = useState<string>('Todos');
-  const [detalheModal, setDetalheModal] = useState<{visible: boolean, label?: string, valor?: number}>({visible: false});
+  const [produtoFiltroMedicao, setProdutoFiltroMedicao] = useState<string>('Todos');
+  const [produtoFiltroBancada, setProdutoFiltroBancada] = useState<string>('Todos');
   // Feedback visual para modal
   const [modalOpening, setModalOpening] = useState(false);
   useEffect(() => {
@@ -67,8 +75,13 @@ export default function RelatoriosScreen() {
     { label: 'Últimos 3 meses', value: '3m' },
   ];
 
-  const produtosFiltro = useMemo(() => {
-    const names = Array.from(new Set(products.map((p) => p.nome)));
+  const produtosFiltroMedicao = useMemo(() => {
+    const names = Array.from(new Set(products.filter((p: any) => !String(p.id || '').startsWith('b')).map((p) => p.nome)));
+    return ['Todos', ...names];
+  }, [products]);
+
+  const produtosFiltroBancada = useMemo(() => {
+    const names = Array.from(new Set(products.filter((p: any) => String(p.id || '').startsWith('b')).map((p) => p.nome)));
     return ['Todos', ...names];
   }, [products]);
 
@@ -121,45 +134,128 @@ export default function RelatoriosScreen() {
       {
         data: salesData.data,
         color: (opacity = 1) => `rgba(59, 130, 246, ${opacity})`,
-        strokeWidth: 3
+        strokeWidth: 2
       }
     ],
   };
 
-  const stockData = useMemo(() => {
-    const grouped = new Map<string, number>();
+  const produtosData = useMemo(() => {
+    const grouped = new Map<string, { label: string; linha: string; total: number }>();
+
     filteredMeasurementsInPeriod.forEach((m) => {
       (m.medicaoRows || []).forEach((row: any) => {
-        grouped.set(row.nome, (grouped.get(row.nome) || 0) + Number(row.vendidos || 0));
-      });
-      (m.bancadaRows || []).forEach((row: any) => {
-        grouped.set(row.nome, (grouped.get(row.nome) || 0) + Number(row.quantidadeComprada || 0));
+        const key = `${row.id || row.nome}-${row.linha || ''}`;
+        const prev = grouped.get(key);
+        const label = `${row.nome} (${row.linha || 'Bymen'})`;
+        grouped.set(key, {
+          label,
+          linha: row.linha || 'Bymen',
+          total: Number(row.vendidos || 0) + Number(prev?.total || 0),
+        });
       });
     });
 
-    let entries = Array.from(grouped.entries());
-    if (produtoFiltro !== 'Todos') {
-      entries = entries.filter(([name]) => name === produtoFiltro);
+    let entries = Array.from(grouped.values());
+    if (produtoFiltroMedicao !== 'Todos') {
+      entries = entries.filter((item) => item.label.startsWith(`${produtoFiltroMedicao} (`));
     } else {
-      entries = entries.sort((a, b) => b[1] - a[1]).slice(0, 6);
+      entries = entries.sort((a, b) => b.total - a.total).slice(0, 8);
     }
 
     if (entries.length === 0) {
-      entries = [['Sem dados', 0]];
+      return [] as Array<{ label: string; linha: string; total: number; color: string }>;
     }
 
-    return {
-      labels: entries.map(([name]) => name),
-      data: entries.map(([_, value]) => value),
-    };
-  }, [filteredMeasurementsInPeriod, produtoFiltro]);
+    return entries.map((item) => ({
+      ...item,
+      color: getLinhaColor(item.linha),
+    }));
+  }, [filteredMeasurementsInPeriod, produtoFiltroMedicao]);
 
-  const estoqueProdutos = {
-    labels: stockData.labels,
-    datasets: [
-      { data: stockData.data },
-    ],
-  };
+  const bancadaData = useMemo(() => {
+    const grouped = new Map<string, { label: string; linha: string; total: number }>();
+
+    filteredMeasurementsInPeriod.forEach((m) => {
+      (m.bancadaRows || []).forEach((row: any) => {
+        const key = `${row.id || row.nome}-${row.linha || ''}`;
+        const prev = grouped.get(key);
+        const label = `${row.nome} (${row.linha || 'Bymen'})`;
+        grouped.set(key, {
+          label,
+          linha: row.linha || 'Bymen',
+          total: Number(row.quantidadeComprada || 0) + Number(prev?.total || 0),
+        });
+      });
+    });
+
+    let entries = Array.from(grouped.values());
+
+    if (produtoFiltroBancada !== 'Todos') {
+      entries = entries.filter((item) => item.label.startsWith(`${produtoFiltroBancada} (`));
+    } else {
+      entries = entries.sort((a, b) => b.total - a.total).slice(0, 8);
+    }
+
+    return entries.map((item) => ({
+      ...item,
+      color: getLinhaColor(item.linha),
+    }));
+  }, [filteredMeasurementsInPeriod, produtoFiltroBancada]);
+
+  const vendasChartWidth = Math.max(screenWidth - (isSmallScreen ? 16 : 48), salesData.labels.length * (isSmallScreen ? 70 : 84));
+
+  function renderHorizontalRanking(
+    title: string,
+    subtitle: string,
+    data: Array<{ label: string; linha: string; total: number; color: string }>,
+    iconColor: string,
+  ) {
+    const max = Math.max(...data.map((d) => d.total), 1);
+
+    return (
+      <View
+        style={{
+          marginBottom: 16,
+          backgroundColor: '#FEF2F2',
+          borderRadius: 16,
+          padding: isSmallScreen ? 10 : 16,
+          borderWidth: 1,
+          borderColor: '#FECACA',
+        }}
+      >
+        <Text style={{ fontSize: isSmallScreen ? 14 : 16, fontWeight: '700', color: '#991B1B', marginBottom: 10 }}>
+          {title}
+        </Text>
+        <Text style={{ fontSize: isSmallScreen ? 12 : 13, color: '#7F1D1D', marginBottom: 10 }}>
+          {subtitle}
+        </Text>
+
+        {data.length === 0 ? (
+          <Text style={{ color: '#9CA3AF', fontStyle: 'italic' }}>Sem dados para o período selecionado.</Text>
+        ) : (
+          data.map((item, idx) => (
+            <View key={`${item.label}-${idx}`} style={{ marginBottom: 10 }}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
+                <Text style={{ color: '#111827', fontSize: isSmallScreen ? 12 : 13, flex: 1, paddingRight: 8 }} numberOfLines={1}>
+                  {item.label}
+                </Text>
+                <Text style={{ color: iconColor, fontWeight: '700', fontSize: isSmallScreen ? 12 : 13 }}>{item.total}</Text>
+              </View>
+              <View style={{ height: 10, borderRadius: 6, backgroundColor: '#F3F4F6', overflow: 'hidden' }}>
+                <View
+                  style={{
+                    height: '100%',
+                    width: `${Math.max((item.total / max) * 100, 4)}%`,
+                    backgroundColor: item.color,
+                  }}
+                />
+              </View>
+            </View>
+          ))
+        )}
+      </View>
+    );
+  }
 
   if (loading) {
     return (
@@ -183,7 +279,7 @@ export default function RelatoriosScreen() {
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: '#fff' }}
-      contentContainerStyle={{ paddingHorizontal: isSmallScreen ? 8 : 24, paddingTop: 18, paddingBottom: 24 }}
+      contentContainerStyle={{ paddingHorizontal: isSmallScreen ? 8 : 24, paddingTop: 18, paddingBottom: 48 }}
     >
       <Text
         style={{
@@ -191,7 +287,7 @@ export default function RelatoriosScreen() {
           fontWeight: '800',
           color: '#111827',
           marginBottom: isSmallScreen ? 16 : 24,
-          textAlign: 'center',
+          textAlign: 'left',
           letterSpacing: 0.5,
         }}
       >
@@ -225,7 +321,7 @@ export default function RelatoriosScreen() {
           onRequestClose={() => setModalVisible(false)}>
           <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.2)' }}>
             <View style={{ width: isSmallScreen ? '95%' : '80%', backgroundColor: '#fff', borderRadius: 16, padding: isSmallScreen ? 16 : 28, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.12, shadowRadius: 8, elevation: 8 }}>
-              <Text style={{ fontSize: isSmallScreen ? 15 : 19, fontWeight: '700', color: '#374151', marginBottom: isSmallScreen ? 10 : 18, textAlign: 'center' }}>Escolha a barbearia</Text>
+              <Text style={{ fontSize: isSmallScreen ? 15 : 19, fontWeight: '700', color: '#374151', marginBottom: isSmallScreen ? 10 : 18, textAlign: 'left' }}>Escolha a barbearia</Text>
               {barbearias.map(b => (
                 <TouchableOpacity
                   key={b.id}
@@ -238,7 +334,7 @@ export default function RelatoriosScreen() {
                 </TouchableOpacity>
               ))}
               <TouchableOpacity style={{ marginTop: 18 }} onPress={() => setModalVisible(false)}>
-                <Text style={{ color: '#3B82F6', fontWeight: '700', fontSize: isSmallScreen ? 14 : 17, textAlign: 'center' }}>Cancelar</Text>
+                <Text style={{ color: '#3B82F6', fontWeight: '700', fontSize: isSmallScreen ? 14 : 17, textAlign: 'left' }}>Cancelar</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -261,8 +357,7 @@ export default function RelatoriosScreen() {
           <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: isSmallScreen ? 6 : 0 }}>
             <Ionicons name="trending-up-outline" size={22} color="#3B82F6" style={{ marginRight: 8 }} />
             <Text style={{ fontSize: isSmallScreen ? 15 : 19, fontWeight: '700', color: '#3B82F6', letterSpacing: 0.2 }}>
-              Vendas por mês
-              <Text style={{ fontSize: 15, color: '#2563EB', fontWeight: '500' }}> — {barbearias.find(b => b.id === barbeariaId)?.nome || ''}</Text>
+              Vendas por mês (colunas)
             </Text>
           </View>
           <TouchableOpacity style={{ padding: 6, borderRadius: 6, backgroundColor: '#DBEAFE' }} onPress={() => alert('Exportação em breve!')}>
@@ -288,35 +383,36 @@ export default function RelatoriosScreen() {
             </TouchableOpacity>
           ))}
         </View>
-        <LineChart
-          data={vendasPorMesFiltrado}
-          width={screenWidth - (isSmallScreen ? 16 : 48)}
-          height={isSmallScreen ? 160 : 220}
-          chartConfig={{
-            backgroundColor: '#F0F9FF',
-            backgroundGradientFrom: '#F0F9FF',
-            backgroundGradientTo: '#F0F9FF',
-            decimalPlaces: 0,
-            color: (opacity = 1) => `rgba(59, 130, 246, ${opacity})`,
-            labelColor: (opacity = 1) => `rgba(30, 64, 175, ${opacity})`,
-            style: { borderRadius: 16 },
-            propsForDots: {
-              r: '6',
-              strokeWidth: '2',
-              stroke: '#3B82F6',
-            },
-          }}
-          bezier
-          style={{ borderRadius: 16 }}
-          getDotProps={(value, index) => ({
-            onPress: () => setDetalheModal({ visible: true, label: salesData.labels[index], valor: value }),
-          })}
-        />
+        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+          <BarChart
+            data={vendasPorMesFiltrado}
+            width={vendasChartWidth}
+            height={isSmallScreen ? 200 : 230}
+            yAxisLabel={''}
+            yAxisSuffix={''}
+            fromZero
+            showValuesOnTopOfBars
+            withInnerLines
+            chartConfig={{
+              backgroundColor: '#F0F9FF',
+              backgroundGradientFrom: '#F0F9FF',
+              backgroundGradientTo: '#F0F9FF',
+              decimalPlaces: 0,
+              color: (opacity = 1) => `rgba(59, 130, 246, ${opacity})`,
+              labelColor: (opacity = 1) => `rgba(30, 64, 175, ${opacity})`,
+              style: { borderRadius: 16 },
+              propsForBackgroundLines: {
+                strokeDasharray: '',
+              },
+            }}
+            style={{ borderRadius: 16 }}
+          />
+        </ScrollView>
       </View>
 
-      {/* Gráfico de Estoque */}
+      {/* Card: Medição */}
       <View style={{
-        marginBottom: isSmallScreen ? 18 : 36,
+        marginBottom: 16,
         backgroundColor: '#FEF2F2',
         borderRadius: 16,
         padding: isSmallScreen ? 10 : 20,
@@ -330,78 +426,126 @@ export default function RelatoriosScreen() {
           <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: isSmallScreen ? 6 : 0 }}>
             <Ionicons name="cube-outline" size={22} color="#DC2626" style={{ marginRight: 8 }} />
             <Text style={{ fontSize: isSmallScreen ? 15 : 19, fontWeight: '700', color: '#DC2626', letterSpacing: 0.2 }}>
-              Produtos no período
-              <Text style={{ fontSize: 15, color: '#B91C1C', fontWeight: '500' }}> — {barbearias.find(b => b.id === barbeariaId)?.nome || ''}</Text>
+              Medição
             </Text>
           </View>
-          <TouchableOpacity style={{ padding: 6, borderRadius: 6, backgroundColor: '#FEE2E2' }} onPress={() => alert('Exportação em breve!')}>
-            <Ionicons name="share-outline" size={18} color="#B91C1C" />
+          <TouchableOpacity
+            style={{ paddingVertical: 6, paddingHorizontal: 10, borderRadius: 8, backgroundColor: '#FECACA', borderWidth: 1, borderColor: '#FCA5A5' }}
+            onPress={() => setModalFiltroMedicaoVisible(true)}
+          >
+            <Text style={{ color: '#991B1B', fontWeight: '700', fontSize: 12 }}>
+              Filtro: {produtoFiltroMedicao}
+            </Text>
           </TouchableOpacity>
         </View>
-        {/* Filtro de produto */}
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
-          {produtosFiltro.map(prod => (
-            <TouchableOpacity
-              key={prod}
-              style={{
-                backgroundColor: produtoFiltro === prod ? '#DC2626' : '#FECACA',
-                paddingVertical: isSmallScreen ? 2 : 4,
-                paddingHorizontal: isSmallScreen ? 8 : 12,
-                borderRadius: 8,
-                marginRight: 6,
-                marginBottom: isSmallScreen ? 4 : 0,
-              }}
-              onPress={() => setProdutoFiltro(prod)}
-            >
-              <Text style={{ color: produtoFiltro === prod ? '#fff' : '#B91C1C', fontWeight: '600', fontSize: isSmallScreen ? 11 : 13 }}>{prod}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-          <BarChart
-            data={estoqueProdutos}
-            width={Math.max(screenWidth - (isSmallScreen ? 16 : 48), estoqueProdutos.labels.length * 120)}
-            height={isSmallScreen ? 200 : 260}
-            yAxisLabel={''}
-            yAxisSuffix={''}
-            verticalLabelRotation={20}
-            chartConfig={{
-              backgroundColor: '#FEF2F2',
-              backgroundGradientFrom: '#FEF2F2',
-              backgroundGradientTo: '#FEF2F2',
-              decimalPlaces: 0,
-              color: (opacity = 1) => `rgba(220, 38, 38, ${opacity})`,
-              labelColor: (opacity = 1) => `rgba(153, 27, 27, ${opacity})`,
-              style: { borderRadius: 16 },
-              propsForLabels: {
-                fontSize: '11',
-              },
-            }}
-            style={{ borderRadius: 16 }}
-            withCustomBarColorFromData={false}
-            showBarTops={true}
-            fromZero
-          />
-        </ScrollView>
+        {renderHorizontalRanking(
+          'Produtos vendidos',
+          'Cores por linha: Wood (madeira), Ocean (mar).',
+          produtosData,
+          '#B91C1C',
+        )}
       </View>
 
-      <Text style={{ color: '#6B7280', fontSize: 14, textAlign: 'center', marginTop: 8, fontStyle: 'italic' }}>
+      {/* Card: Bancada */}
+      <View style={{
+        marginBottom: isSmallScreen ? 18 : 36,
+        backgroundColor: '#FEF2F2',
+        borderRadius: 16,
+        padding: isSmallScreen ? 10 : 20,
+        shadowColor: '#DC2626',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.10,
+        shadowRadius: 8,
+        elevation: 6,
+      }}>
+        <View style={{ flexDirection: isSmallScreen ? 'column' : 'row', alignItems: isSmallScreen ? 'flex-start' : 'center', marginBottom: isSmallScreen ? 6 : 10, justifyContent: 'space-between' }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: isSmallScreen ? 6 : 0 }}>
+            <Ionicons name="flask-outline" size={22} color="#B91C1C" style={{ marginRight: 8 }} />
+            <Text style={{ fontSize: isSmallScreen ? 15 : 19, fontWeight: '700', color: '#B91C1C', letterSpacing: 0.2 }}>
+              Bancada
+            </Text>
+          </View>
+          <TouchableOpacity
+            style={{ paddingVertical: 6, paddingHorizontal: 10, borderRadius: 8, backgroundColor: '#FECACA', borderWidth: 1, borderColor: '#FCA5A5' }}
+            onPress={() => setModalFiltroBancadaVisible(true)}
+          >
+            <Text style={{ color: '#991B1B', fontWeight: '700', fontSize: 12 }}>
+              Filtro: {produtoFiltroBancada}
+            </Text>
+          </TouchableOpacity>
+        </View>
+        {renderHorizontalRanking(
+          'Produtos de bancada',
+          'Quantidade consumida de itens de uso interno no período.',
+          bancadaData,
+          '#7F1D1D',
+        )}
+      </View>
+
+      <Text style={{ color: '#6B7280', fontSize: 14, textAlign: 'left', marginTop: 8, fontStyle: 'italic' }}>
         * Dados reais da homologação (Supabase) conforme barbearias, medições e estoque sincronizados.
       </Text>
 
-      {/* Modal de detalhamento */}
-      <Modal visible={detalheModal.visible} transparent animationType="fade" onRequestClose={() => setDetalheModal({ visible: false })}>
-        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.18)' }}>
-          <View style={{ backgroundColor: '#fff', borderRadius: 16, padding: isSmallScreen ? 16 : 28, minWidth: isSmallScreen ? 160 : 220, alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.12, shadowRadius: 8, elevation: 8 }}>
-            <Text style={{ fontSize: isSmallScreen ? 15 : 18, fontWeight: '700', marginBottom: 8, color: '#111827' }}>Detalhe</Text>
-            <Text style={{ fontSize: isSmallScreen ? 13 : 16, color: '#374151', marginBottom: 12 }}>{detalheModal.label}</Text>
-            <Text style={{ fontSize: isSmallScreen ? 18 : 22, fontWeight: '700', color: '#2563EB', marginBottom: 18 }}>{detalheModal.valor}</Text>
-            <TouchableOpacity style={{ marginTop: 8, backgroundColor: '#E0E7FF', borderRadius: 8, paddingVertical: isSmallScreen ? 6 : 8, paddingHorizontal: isSmallScreen ? 16 : 24 }} onPress={() => setDetalheModal({ visible: false })}>
-              <Text style={{ color: '#2563EB', fontWeight: '700', fontSize: isSmallScreen ? 13 : 16 }}>Fechar</Text>
+      <Modal
+        visible={modalFiltroMedicaoVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setModalFiltroMedicaoVisible(false)}
+      >
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.2)' }}>
+          <View style={{ width: isSmallScreen ? '92%' : '70%', backgroundColor: '#fff', borderRadius: 16, padding: isSmallScreen ? 16 : 24 }}>
+            <Text style={{ fontSize: 16, fontWeight: '700', color: '#111827', marginBottom: 10 }}>Filtro • Medição</Text>
+            {produtosFiltroMedicao.map((prod) => (
+              <TouchableOpacity
+                key={`med-${prod}`}
+                style={{ paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' }}
+                onPress={() => {
+                  setProdutoFiltroMedicao(prod);
+                  setModalFiltroMedicaoVisible(false);
+                }}
+              >
+                <Text style={{ color: prod === produtoFiltroMedicao ? '#DC2626' : '#111827', fontWeight: prod === produtoFiltroMedicao ? '700' : '500' }}>
+                  {prod}
+                </Text>
+              </TouchableOpacity>
+            ))}
+            <TouchableOpacity onPress={() => setModalFiltroMedicaoVisible(false)} style={{ marginTop: 12 }}>
+              <Text style={{ color: '#2563EB', fontWeight: '700' }}>Fechar</Text>
             </TouchableOpacity>
           </View>
         </View>
       </Modal>
+
+      <Modal
+        visible={modalFiltroBancadaVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setModalFiltroBancadaVisible(false)}
+      >
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.2)' }}>
+          <View style={{ width: isSmallScreen ? '92%' : '70%', backgroundColor: '#fff', borderRadius: 16, padding: isSmallScreen ? 16 : 24 }}>
+            <Text style={{ fontSize: 16, fontWeight: '700', color: '#111827', marginBottom: 10 }}>Filtro • Bancada</Text>
+            {produtosFiltroBancada.map((prod) => (
+              <TouchableOpacity
+                key={`ban-${prod}`}
+                style={{ paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' }}
+                onPress={() => {
+                  setProdutoFiltroBancada(prod);
+                  setModalFiltroBancadaVisible(false);
+                }}
+              >
+                <Text style={{ color: prod === produtoFiltroBancada ? '#DC2626' : '#111827', fontWeight: prod === produtoFiltroBancada ? '700' : '500' }}>
+                  {prod}
+                </Text>
+              </TouchableOpacity>
+            ))}
+            <TouchableOpacity onPress={() => setModalFiltroBancadaVisible(false)} style={{ marginTop: 12 }}>
+              <Text style={{ color: '#2563EB', fontWeight: '700' }}>Fechar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
     </ScrollView>
   );
 }

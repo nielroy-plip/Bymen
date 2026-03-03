@@ -35,6 +35,7 @@ const styles = StyleSheet.create({
 import Input from './Input';
 import { useResponsive } from '../hooks/useResponsive';
 import { MedicaoRow } from '../services/api';
+import { getProductUnit } from '../utils/product';
 export type { MedicaoRow } from '../services/api';
 
 export type Product = {
@@ -162,7 +163,7 @@ export default function ProductRow({
       }}
     >
       <Text style={{ fontSize: fontSize.large, fontWeight: '700', color: '#111827', marginBottom: 2 }}>
-        {product.nome} - {product.cap}{product.nome.includes('Pomada') || product.nome.includes('Pó') ? 'g' : 'ml'}
+        {product.nome} - {product.cap}{getProductUnit(product.nome)}
       </Text>
       <Text style={{ fontSize: fontSize.small, color: '#6B7280', marginBottom: 2 }}>
         Linha: {product.linha}

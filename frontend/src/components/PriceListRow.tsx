@@ -124,7 +124,7 @@ export default function PriceListRow({ item, onChange, onRemove }: Props) {
         }}
       >
         <Text style={{ fontSize: fontSize.base, fontWeight: '700', color: '#059669' }}>
-          Total: R$ {calculated.total.toFixed(2)}
+          Total: R${calculated.total.toFixed(2)}
         </Text>
       </View>
     </View>

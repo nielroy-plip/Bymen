@@ -1,6 +1,7 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, ScrollView, Alert, Pressable } from 'react-native';
+import React, { useEffect, useMemo, useState } from 'react';
+import { View, Text, ScrollView, Alert, Pressable, KeyboardAvoidingView, Platform, Keyboard, TouchableWithoutFeedback } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { useFocusEffect } from '@react-navigation/native';
 import { RootStackParamList } from '../routes';
 import Button from '../components/Button';
 import Input from '../components/Input';
@@ -11,14 +12,33 @@ import { PRODUTOS_BANCADA } from '../data/products';
 import BancadaRowComponent from '../components/BancadaRow';
 import { Ionicons } from '@expo/vector-icons';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { getProductUnit } from '../utils/product';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Estoque'>;
 
-export default function EstoqueScreen({ navigation }: Props) {
+export default function EstoqueScreen({}: Props) {
   const [products, setProducts] = useState<Product[]>([]);
   const [quantities, setQuantities] = useState<Record<string, string>>({});
   const [activeTab, setActiveTab] = useState<'produtos' | 'bancada'>('produtos');
   const [bancadaQuantities, setBancadaQuantities] = useState<Record<string, string>>({});
+  const [showCriticalDetails, setShowCriticalDetails] = useState(false);
+  const criticalItems = useMemo(
+    () => products.filter((item) => (item.estoque ?? 0) <= 10).map((item) => ({
+      id: item.id,
+      nome: item.nome,
+      linha: item.linha,
+      estoque: item.estoque ?? 0,
+    })),
+    [products]
+  );
+  const criticalProdutos = useMemo(
+    () => criticalItems.filter((item) => !item.id.startsWith('b')),
+    [criticalItems]
+  );
+  const criticalBancada = useMemo(
+    () => criticalItems.filter((item) => item.id.startsWith('b')),
+    [criticalItems]
+  );
 
   // Funções para movimentação de estoque de bancada
   async function handleBancadaEntry(productId: string) {
@@ -61,6 +81,17 @@ export default function EstoqueScreen({ navigation }: Props) {
     loadProducts();
   }, []);
 
+  useFocusEffect(
+    React.useCallback(() => {
+      loadProducts();
+      const timer = setInterval(() => {
+        loadProducts();
+      }, 5000);
+
+      return () => clearInterval(timer);
+    }, [])
+  );
+
   async function loadProducts() {
     const prods = await listProducts();
     setProducts(prods);
@@ -75,7 +106,7 @@ export default function EstoqueScreen({ navigation }: Props) {
     try {
       await addProductStock(productId, qty);
       setQuantities(prev => ({ ...prev, [productId]: '' }));
-      loadProducts();
+      await loadProducts();
       Alert.alert('Sucesso', 'Entrada registrada');
     } catch {
       Alert.alert('Erro', 'Falha ao registrar entrada no Supabase (homologação).');
@@ -95,7 +126,7 @@ export default function EstoqueScreen({ navigation }: Props) {
         return;
       }
       setQuantities(prev => ({ ...prev, [productId]: '' }));
-      loadProducts();
+      await loadProducts();
       Alert.alert('Sucesso', 'Saída registrada');
     } catch {
       Alert.alert('Erro', 'Falha ao registrar saída no Supabase (homologação).');
@@ -103,7 +134,12 @@ export default function EstoqueScreen({ navigation }: Props) {
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
+    <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
+      <KeyboardAvoidingView
+        style={{ flex: 1, backgroundColor: '#FFFFFF' }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 72 : 0}
+      >
       <View style={{ flexDirection: 'row', marginTop: 16, marginHorizontal: 24, marginBottom: 0, gap: 8 }}>
         <Pressable
           onPress={() => setActiveTab('produtos')}
@@ -140,8 +176,53 @@ export default function EstoqueScreen({ navigation }: Props) {
           <Text style={{ fontWeight: '700', color: activeTab === 'bancada' ? '#FFFFFF' : '#6B7280' }}>Bancada</Text>
         </Pressable>
       </View>
-      <ScrollView contentContainerStyle={{ padding: 24 }}>
+      <ScrollView contentContainerStyle={{ padding: 24 }} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
         <Text style={{ fontSize: 24, fontWeight: '700', color: '#111827', marginBottom: 16 }}>Estoque</Text>
+
+        <Card>
+          <Pressable
+            onPress={() => setShowCriticalDetails((prev) => !prev)}
+            style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}
+          >
+            <Text style={{ fontSize: 16, fontWeight: '700', color: '#92400E' }}>
+              Estoque crítico (≤ 10)
+            </Text>
+            <Text style={{ color: '#92400E', fontWeight: '700' }}>
+              {showCriticalDetails ? 'Ocultar lista' : 'Mostrar lista'}
+            </Text>
+          </Pressable>
+
+          <Text style={{ color: '#6B7280', marginBottom: showCriticalDetails ? 10 : 0 }}>
+            Total: {criticalItems.length} • Produtos: {criticalProdutos.length} • Bancada: {criticalBancada.length}
+          </Text>
+
+          {showCriticalDetails && (
+            <>
+              <Text style={{ color: '#1E40AF', fontWeight: '700', marginBottom: 6 }}>Produtos</Text>
+              {criticalProdutos.length > 0 ? (
+                criticalProdutos.map((item) => (
+                  <Text key={item.id} style={{ color: '#1E40AF', marginBottom: 4 }}>
+                    • {item.nome} - {item.linha} ({item.estoque})
+                  </Text>
+                ))
+              ) : (
+                <Text style={{ color: '#6B7280', marginBottom: 8 }}>Nenhum produto crítico.</Text>
+              )}
+
+              <Text style={{ color: '#991B1B', fontWeight: '700', marginTop: 8, marginBottom: 6 }}>Bancada</Text>
+              {criticalBancada.length > 0 ? (
+                criticalBancada.map((item) => (
+                  <Text key={item.id} style={{ color: '#991B1B', marginBottom: 4 }}>
+                    • {item.nome} - {item.linha} ({item.estoque})
+                  </Text>
+                ))
+              ) : (
+                <Text style={{ color: '#6B7280' }}>Nenhum item de bancada crítico.</Text>
+              )}
+            </>
+          )}
+        </Card>
+
         {activeTab === 'produtos' && (
           products.filter(p => !p.id.startsWith('b')).map((p) => (
             <View key={p.id} style={{ marginBottom: 16 }}>
@@ -172,7 +253,7 @@ export default function EstoqueScreen({ navigation }: Props) {
               <Card>
                 <Text style={{ fontSize: 18, fontWeight: '600', color: '#111827' }}>{p.nome}</Text>
                 <Text style={{ color: '#6B7280' }}>Linha: {p.linha}</Text>
-                <Text style={{ color: '#6B7280' }}>Capacidade: {p.cap}{p.nome.includes('Pomada') || p.nome.includes('Pó') ? 'g' : 'ml'}</Text>
+                <Text style={{ color: '#6B7280' }}>Capacidade: {p.cap}{getProductUnit(p.nome)}</Text>
                 <Text style={{ color: '#6B7280' }}>Estoque Atual: {p.estoque}</Text>
                 <View style={{ marginTop: 12 }}>
                   <Input
@@ -192,6 +273,7 @@ export default function EstoqueScreen({ navigation }: Props) {
           ))
         )}
       </ScrollView>
-    </View>
+      </KeyboardAvoidingView>
+    </TouchableWithoutFeedback>
   );
 }

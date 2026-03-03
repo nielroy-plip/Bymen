@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { View, Text, ScrollView, ActivityIndicator, Pressable, TextInput } from 'react-native';
+import { View, Text, ScrollView, ActivityIndicator, Pressable, TextInput, KeyboardAvoidingView, Platform, Keyboard, TouchableWithoutFeedback } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../routes';
 import { Client } from '../data/clients';
@@ -205,7 +205,12 @@ export default function CriarMedicaoScreen({ navigation, route }: Props) {
   const totalGeral = useMemo(() => valorMedicao + valorBancada, [valorMedicao, valorBancada]);
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
+    <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
+      <KeyboardAvoidingView
+        style={{ flex: 1, backgroundColor: '#FFFFFF' }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 72 : 0}
+      >
       {/* HEADER */}
       <View style={{ padding, paddingBottom: 0 }}>
         <OperationContextHeader
@@ -277,7 +282,7 @@ export default function CriarMedicaoScreen({ navigation, route }: Props) {
       {/* ================================================ */}
       {/* CONTEÚDO DAS ABAS                               */}
       {/* ================================================ */}
-      <ScrollView contentContainerStyle={{ padding }}>
+      <ScrollView contentContainerStyle={{ padding }} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
         {loading ? <ActivityIndicator /> : null}
 
         {/* ABA: MEDIÇÃO */}
@@ -443,6 +448,7 @@ export default function CriarMedicaoScreen({ navigation, route }: Props) {
               clientId: client?.id || '',
               medicaoRows: medicaoArray,
               bancadaRows: bancadaArray,
+              bonusRows: bonusArray,
               valorMedicao,
               valorBancada,
               totalGeral,
@@ -451,6 +457,7 @@ export default function CriarMedicaoScreen({ navigation, route }: Props) {
           }
         />
       </ScrollView>
-    </View>
+      </KeyboardAvoidingView>
+    </TouchableWithoutFeedback>
   );
 }

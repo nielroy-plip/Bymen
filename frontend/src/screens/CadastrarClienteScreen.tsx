@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, ScrollView, Alert } from 'react-native';
+import { View, Text, ScrollView, Alert, KeyboardAvoidingView, Platform, Keyboard, TouchableWithoutFeedback } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../routes';
 import Input from '../components/Input';
@@ -102,8 +102,13 @@ export default function CadastrarClienteScreen({ navigation, route }: Props) {
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
-      <ScrollView contentContainerStyle={{ padding }}>
+    <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
+      <KeyboardAvoidingView
+        style={{ flex: 1, backgroundColor: '#FFFFFF' }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 72 : 0}
+      >
+        <ScrollView contentContainerStyle={{ padding }} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
 
         <Input
           label="Nome da Barbearia *"
@@ -170,7 +175,8 @@ export default function CadastrarClienteScreen({ navigation, route }: Props) {
           icon={clientId ? 'save-outline' : 'checkmark-done-outline'}
           onPress={handleSalvar}
         />
-      </ScrollView>
-    </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </TouchableWithoutFeedback>
   );
 }

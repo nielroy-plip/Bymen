@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, ScrollView, Alert, TextInput } from 'react-native';
+import { View, Text, ScrollView, Alert, TextInput, KeyboardAvoidingView, Platform, Keyboard, TouchableWithoutFeedback } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../routes';
 import Button from '../components/Button';
@@ -74,8 +74,13 @@ export default function ImportarEstoqueScreen({ navigation }: Props) {
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
-      <ScrollView contentContainerStyle={{ padding: 24 }}>
+    <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
+      <KeyboardAvoidingView
+        style={{ flex: 1, backgroundColor: '#FFFFFF' }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 72 : 0}
+      >
+      <ScrollView contentContainerStyle={{ padding: 24 }} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
         <Text style={{ fontSize: 24, fontWeight: '700', color: '#111827', marginBottom: 16 }}>Importar Estoque Cliente</Text>
         <Card>
           <Text style={{ fontSize: 16, fontWeight: '600', color: '#111827', marginBottom: 8 }}>Dados do Cliente</Text>
@@ -129,6 +134,7 @@ export default function ImportarEstoqueScreen({ navigation }: Props) {
         </Card>
         <Button title="Importar" onPress={handleImport} />
       </ScrollView>
-    </View>
+      </KeyboardAvoidingView>
+    </TouchableWithoutFeedback>
   );
 }

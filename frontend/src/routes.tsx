@@ -30,15 +30,22 @@ export type RootStackParamList = {
     clientId: string;
     medicaoRows: MedicaoRow[];
     bancadaRows: BancadaRow[];
+    bonusRows?: BancadaRow[];
     valorMedicao: number;
     valorBancada: number;
     totalGeral: number;
     dateTime: string;
     responsavel?: string;
+    observacoes?: string;
+    pagamentoPix?: boolean;
     signatureDataUrl?: string;
   };
   HistoricoMedicoes: undefined;
-  Estoque: undefined;
+  Estoque:
+    | {
+        criticalItems?: Array<{ id: string; nome: string; linha: string; estoque: number }>;
+      }
+    | undefined;
   EnviarEstoque: { clientId: string } | undefined;
   ImportarEstoque: undefined;
   CadastrarCliente: { clientId?: string } | undefined;

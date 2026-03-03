@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useEffect } from 'react';
-import { View, Text, ScrollView, TextInput, Alert } from 'react-native';
+import { View, Text, ScrollView, TextInput, Alert, KeyboardAvoidingView, Platform, Keyboard, TouchableWithoutFeedback } from 'react-native';
 import { TouchableOpacity } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../routes';
@@ -24,6 +24,7 @@ import SignaturePad from '../components/SignaturePad';
 import { useResponsive } from '../hooks/useResponsive';
 import * as Sharing from 'expo-sharing';
 import OperationContextHeader from '../components/OperationContextHeader';
+import { getProductUnit } from '../utils/product';
 
 const BACKEND_URL = API_BASE_URL;
 const ENABLE_BLING_SYNC = String(process.env.EXPO_PUBLIC_ENABLE_BLING || '').toLowerCase() === 'true';
@@ -31,8 +32,6 @@ const ENABLE_BLING_SYNC = String(process.env.EXPO_PUBLIC_ENABLE_BLING || '').toL
 type Props = NativeStackScreenProps<RootStackParamList, 'FinalizarMedicao'>;
 
 export default function FinalizarMedicaoScreen({ navigation, route }: Props) {
-  const [pagamentoPix, setPagamentoPix] = useState(false);
-    const [observacoes, setObservacoes] = useState('');
   const params = route.params as any;
   const {
     clientId,
@@ -43,9 +42,14 @@ export default function FinalizarMedicaoScreen({ navigation, route }: Props) {
     totalGeral,
     dateTime,
     responsavel: responsavelParam,
+    observacoes: observacoesParam,
+    pagamentoPix: pagamentoPixParam,
     signatureDataUrl: signatureParam,
     bonusRows: bonusRowsParam = []
   } = params;
+
+  const [pagamentoPix, setPagamentoPix] = useState(Boolean(pagamentoPixParam));
+  const [observacoes, setObservacoes] = useState(observacoesParam || '');
 
   // Estado local para produtos bonificados
   const [bonusRows, setBonusRows] = useState(Array.isArray(bonusRowsParam) ? bonusRowsParam : []);
@@ -146,7 +150,9 @@ export default function FinalizarMedicaoScreen({ navigation, route }: Props) {
         pagamentoPix
       });
 
-      await updateMeasurementPdf(id, uri);
+      if (finalizedMeasurementId) {
+        await updateMeasurementPdf(id, uri);
+      }
       setPdfUri(uri);
       Alert.alert('Sucesso', 'PDF gerado com sucesso!');
 
@@ -257,9 +263,13 @@ export default function FinalizarMedicaoScreen({ navigation, route }: Props) {
         medicaoRows,
         valorMedicao,
         bancadaRows,
+        bonusRows,
         valorBancada,
         totalGeral: pagamentoPix ? totalGeral - (valorMedicao - valorMedicaoPix) : totalGeral,
         responsavel: responsavel || client.responsavel,
+        observacoes,
+        pagamentoPix,
+        pdfUri: pdfUri || undefined,
         signatureDataUrl,
         status: 'FINALIZED',
         syncStatus: 'PENDING',
@@ -384,8 +394,13 @@ export default function FinalizarMedicaoScreen({ navigation, route }: Props) {
   // Calcula desconto PIX (5%)
   const valorMedicaoPix = pagamentoPix ? valorMedicao * 0.95 : valorMedicao;
   return (
-    <View style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
-      <ScrollView contentContainerStyle={{ padding }}>
+    <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
+      <KeyboardAvoidingView
+        style={{ flex: 1, backgroundColor: '#FFFFFF' }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 72 : 0}
+      >
+      <ScrollView contentContainerStyle={{ padding }} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
         <OperationContextHeader
           title="Resumo da Medição"
           subtitle={`${client.nome} • ${dateTime}`}
@@ -423,7 +438,7 @@ export default function FinalizarMedicaoScreen({ navigation, route }: Props) {
                 <Text style={{ color: '#FFF', fontSize: 18, fontWeight: 'bold' }}>✓</Text>
               )}
             </TouchableOpacity>
-            <Text style={{ marginLeft: 8 }}>Pagamento em PIX (5% de desconto)</Text>
+            <Text style={{ marginLeft: 8 }}>Pagamento em PIX (5%)</Text>
           </View>
           <Text style={{ fontSize: fontSize.base, fontWeight: '700', color: '#1E40AF', marginBottom: 8 }}>
             📊 Medição (Produtos Vendidos)
@@ -436,7 +451,7 @@ export default function FinalizarMedicaoScreen({ navigation, route }: Props) {
             medicaoRows.map((r: any) => (
               <View key={r.id} style={{ paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: '#DBEAFE' }}>
                 <Text style={{ color: '#111827', fontWeight: '600', fontSize: fontSize.small }}>
-                  {r.nome} • {r.linha} • {r.cap}{(String(r.nome) || '').includes('Pomada') || (String(r.nome) || '').includes('Pó') ? 'g' : 'ml'}
+                  {r.nome} • {r.linha} • {r.cap}{getProductUnit(String(r.nome || ''))}
                 </Text>
                 <Text style={{ color: '#6B7280', fontSize: fontSize.small }}>
                   PE: {r.estoqueAtual} | PV: {r.vendidos} | PR: {r.repostos} | PN: {r.diferenca} | PRD: {r.produtosRetirados ?? 0} | NE: {r.novoEstoque}
@@ -489,7 +504,7 @@ export default function FinalizarMedicaoScreen({ navigation, route }: Props) {
             bancadaRows.filter((r: any) => r.quantidadeComprada > 0).map((r: any) => (
               <View key={r.id} style={{ paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: '#FEE2E2' }}>
                 <Text style={{ color: '#111827', fontWeight: '600', fontSize: fontSize.small }}>
-                  {r.nome} • {r.linha} • {r.cap}{String(r.nome || '').includes('Pomada') || String(r.nome || '').includes('Pó') ? 'g' : 'ml'}
+                  {r.nome} • {r.linha} • {r.cap}{getProductUnit(String(r.nome || ''))}
                 </Text>
                 <Text style={{ color: '#6B7280', fontSize: fontSize.small }}>
                   Quantidade: {r.quantidadeComprada} × {formatCurrency(r.preco)}
@@ -531,7 +546,7 @@ export default function FinalizarMedicaoScreen({ navigation, route }: Props) {
             bonusRows.filter((r: { quantidadeComprada: number; }) => r.quantidadeComprada > 0).map((r: any) => (
               <View key={r.id} style={{ paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: '#A7F3D0' }}>
                 <Text style={{ color: '#111827', fontWeight: '600', fontSize: fontSize.small }}>
-                  {r.nome} • {r.linha} • {r.cap}{String(r.nome || '').includes('Pomada') || String(r.nome || '').includes('Pó') ? 'g' : 'ml'}
+                  {r.nome} • {r.linha} • {r.cap}{getProductUnit(String(r.nome || ''))}
                 </Text>
                 <Text style={{ color: '#6B7280', fontSize: fontSize.small }}>
                   Quantidade: {r.quantidadeComprada}
@@ -659,6 +674,7 @@ export default function FinalizarMedicaoScreen({ navigation, route }: Props) {
         <View style={{ height: 12 }} />
         <Button title="Enviar via WhatsApp" icon="logo-whatsapp" onPress={handleEnviarWhatsApp} variant="secondary" />
       </ScrollView>
-    </View>
+      </KeyboardAvoidingView>
+    </TouchableWithoutFeedback>
   );
 }

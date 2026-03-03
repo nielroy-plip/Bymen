@@ -3,6 +3,7 @@ import { View, Text } from 'react-native';
 import Input from './Input';
 import { useResponsive } from '../hooks/useResponsive';
 import { formatCurrency } from '../utils/format';
+import { getProductUnit } from '../utils/product';
 
 export type Product = {
   id: string;
@@ -79,7 +80,7 @@ export default function BancadaRowComponent({ product, onChange, hideValues = fa
           {product.nome}
         </Text>
         <Text style={{ fontSize: fontSize.small, color: '#6B7280', marginTop: 2 }}>
-          {product.linha} • {product.cap}{product.nome.includes('Pomada') || product.nome.includes('Pó') ? 'g' : 'ml'}
+          {product.linha} • {product.cap}{getProductUnit(product.nome)}
         </Text>
         {!hideValues && (
           <Text style={{ fontSize: fontSize.small, color: '#991B1B', marginTop: 2, fontWeight: '600' }}>
@@ -113,7 +114,7 @@ export default function BancadaRowComponent({ product, onChange, hideValues = fa
           }}
         >
           <Text style={{ fontSize: fontSize.base, fontWeight: '700', color: '#DC2626' }}>
-            {formatCurrency(calculated.valorTotal).replace('R$ ', '')}
+            {formatCurrency(calculated.valorTotal).replace(/^R\$\s*/, '')}
           </Text>
         </View>
       )}

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, KeyboardAvoidingView, Platform, Alert } from 'react-native';
+import { View, Text, KeyboardAvoidingView, Platform, Alert, ScrollView, Keyboard, TouchableWithoutFeedback } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../routes';
 import Input from '../components/Input';
@@ -96,11 +96,12 @@ export default function LoginScreen({ navigation }: Props) {
   }
 
   return (
-    <KeyboardAvoidingView
-      style={{ flex: 1, backgroundColor: '#FFFFFF' }}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 40 : 0}
-    >
+    <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
+      <KeyboardAvoidingView
+        style={{ flex: 1, backgroundColor: '#FFFFFF' }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 40 : 0}
+      >
       <View style={{ flex: 1, padding: 24, justifyContent: 'center', alignItems: 'center' }}>
         <Image
           source={require('../assets/icon.png')}
@@ -128,31 +129,42 @@ export default function LoginScreen({ navigation }: Props) {
           style={{ marginTop: 12, width: 320, maxWidth: '90%' }}
         />
         {cadastroOpen && (
-          <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: '#fff', justifyContent: 'center', alignItems: 'center', zIndex: 10 }}>
-            <View style={{ width: 320, maxWidth: '90%', padding: 24, borderRadius: 12, backgroundColor: '#F3F4F6', shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 8 }}>
-              <Text style={{ fontSize: 20, fontWeight: '700', marginBottom: 12 }}>Cadastro de Usuário</Text>
-              <Input label="E-mail" value={emailCadastro} onChangeText={setEmailCadastro} style={{ marginBottom: 8 }} />
-              <Input label="Usuário" value={usuarioCadastro} onChangeText={setUsuarioCadastro} style={{ marginBottom: 8 }} />
-              <Input
-                label="Telefone"
-                value={telefoneCadastro}
-                onChangeText={setTelefoneCadastro}
-                style={{ marginBottom: 8 }}
-                keyboardType="phone-pad"
-              />
-              <PasswordInput
-                value={senhaCadastro}
-                onChangeText={setSenhaCadastro}
-                style={{ marginBottom: 8 }}
-                inputContainerStyle={{ backgroundColor: '#FFFFFF' }}
-              />
-              {cadastroErro ? <Text style={{ color: '#EF4444', marginBottom: 8 }}>{cadastroErro}</Text> : null}
-              <Button title="Cadastrar" onPress={handleCadastro} style={{ width: '100%' }} />
-              <Button title="Cancelar" onPress={() => setCadastroOpen(false)} style={{ marginTop: 8, width: '100%' }} />
-            </View>
-          </View>
+          <KeyboardAvoidingView
+            style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: '#fff', justifyContent: 'center', alignItems: 'center', zIndex: 10 }}
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            keyboardVerticalOffset={Platform.OS === 'ios' ? 72 : 0}
+          >
+            <ScrollView
+              style={{ width: '100%' }}
+              contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', alignItems: 'center', padding: 16 }}
+              keyboardShouldPersistTaps="handled"
+            >
+              <View style={{ width: 320, maxWidth: '90%', padding: 24, borderRadius: 12, backgroundColor: '#F3F4F6', shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 8 }}>
+                <Text style={{ fontSize: 20, fontWeight: '700', marginBottom: 12 }}>Cadastro de Usuário</Text>
+                <Input label="E-mail" value={emailCadastro} onChangeText={setEmailCadastro} style={{ marginBottom: 8 }} />
+                <Input label="Usuário" value={usuarioCadastro} onChangeText={setUsuarioCadastro} style={{ marginBottom: 8 }} />
+                <Input
+                  label="Telefone"
+                  value={telefoneCadastro}
+                  onChangeText={setTelefoneCadastro}
+                  style={{ marginBottom: 8 }}
+                  keyboardType="phone-pad"
+                />
+                <PasswordInput
+                  value={senhaCadastro}
+                  onChangeText={setSenhaCadastro}
+                  style={{ marginBottom: 8 }}
+                  inputContainerStyle={{ backgroundColor: '#FFFFFF' }}
+                />
+                {cadastroErro ? <Text style={{ color: '#EF4444', marginBottom: 8 }}>{cadastroErro}</Text> : null}
+                <Button title="Cadastrar" onPress={handleCadastro} style={{ width: '100%' }} />
+                <Button title="Cancelar" onPress={() => setCadastroOpen(false)} style={{ marginTop: 8, width: '100%' }} />
+              </View>
+            </ScrollView>
+          </KeyboardAvoidingView>
         )}
       </View>
-    </KeyboardAvoidingView>
+      </KeyboardAvoidingView>
+    </TouchableWithoutFeedback>
   );
 }

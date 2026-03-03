@@ -78,12 +78,15 @@ export type Measurement = {
   valorMedicao: number;
   // Tabela 2: Bancada (produtos de uso interno)
   bancadaRows: BancadaRow[];
+  bonusRows?: BancadaRow[];
   valorBancada: number;
   // Totais
   totalGeral: number; // valorMedicao + valorBancada
   // Metadados
   pdfUri?: string;
   responsavel?: string;
+  observacoes?: string;
+  pagamentoPix?: boolean;
   signatureDataUrl?: string;
   status?: MeasurementStatus;
   syncStatus?: MeasurementSyncStatus;
@@ -440,19 +443,22 @@ export async function deleteClient(clientId: string) {
 }
 
 export async function listProducts() {
-  const stock = await readStock();
+  const localStock = await readStock();
   // Inclui produtos normais e de bancada na listagem
   const allProducts = [...PRODUCTS, ...PRODUTOS_BANCADA];
 
   try {
     const remoteBalances = await homologRequest<Record<string, number>>('/homolog/stock/balances');
+    const mergedCache = { ...localStock, ...remoteBalances };
+    await writeStock(mergedCache);
+
     return allProducts.map((p) => ({
       ...p,
-      estoque: remoteBalances[p.id] ?? stock[p.id] ?? p.estoque,
+      estoque: remoteBalances[p.id] ?? localStock[p.id] ?? 0,
     }));
   } catch (error) {
     console.warn('Falha ao buscar estoque remoto, usando local:', error);
-    return allProducts.map(p => ({ ...p, estoque: stock[p.id] ?? p.estoque }));
+    return allProducts.map(p => ({ ...p, estoque: localStock[p.id] ?? 0 }));
   }
 }
 
@@ -475,8 +481,23 @@ export async function listProductsForClient(clientId: string) {
 
   return PRODUCTS.map((p) => ({
     ...p,
-    estoque: stock[p.id] ?? latestMeasurementStock[p.id] ?? p.estoque,
+    estoque: stock[p.id] ?? latestMeasurementStock[p.id] ?? 0,
   }));
+}
+
+async function getCurrentDistributorBalance(productId: string, localStock: Record<string, number>) {
+  if (typeof localStock[productId] === 'number') {
+    return localStock[productId];
+  }
+
+  try {
+    const remoteBalances = await homologRequest<Record<string, number>>('/homolog/stock/balances');
+    const merged = { ...localStock, ...remoteBalances };
+    await writeStock(merged);
+    return remoteBalances[productId] ?? merged[productId] ?? 0;
+  } catch {
+    return localStock[productId] ?? 0;
+  }
 }
 
 export async function addClientInitialStock(
@@ -507,7 +528,8 @@ export async function addProductStock(productId: string, quantity: number) {
   const stock = await readStock();
   // Busca em ambos os arrays para garantir produto encontrado
   const allProducts = [...PRODUCTS, ...PRODUTOS_BANCADA];
-  stock[productId] = (stock[productId] ?? allProducts.find(p => p.id === productId)?.estoque ?? 0) + quantity;
+  const current = await getCurrentDistributorBalance(productId, stock);
+  stock[productId] = current + quantity;
   await writeStock(stock);
 
   const product = allProducts.find((p) => p.id === productId);
@@ -530,7 +552,7 @@ export async function addProductStock(productId: string, quantity: number) {
 export async function removeProductStock(productId: string, quantity: number): Promise<boolean> {
   const stock = await readStock();
   const allProducts = [...PRODUCTS, ...PRODUTOS_BANCADA];
-  const current = stock[productId] ?? allProducts.find(p => p.id === productId)?.estoque ?? 0;
+  const current = await getCurrentDistributorBalance(productId, stock);
   if (current >= quantity) {
     stock[productId] = current - quantity;
     await writeStock(stock);
@@ -650,8 +672,30 @@ export async function listMeasurements(): Promise<Measurement[]> {
   try {
     const remote = await homologRequest<Measurement[]>('/homolog/measurements');
     if (Array.isArray(remote) && remote.length > 0) {
-      await writeAll(remote);
-      return retrofitMeasurementClientNames(remote);
+      const localById = new Map(local.map((m) => [m.id, m]));
+
+      const mergedRemote = remote.map((remoteItem) => {
+        const localItem = localById.get(remoteItem.id);
+        if (!localItem) return remoteItem;
+
+        return {
+          ...remoteItem,
+          clientName: remoteItem.clientName || localItem.clientName,
+          bonusRows: remoteItem.bonusRows ?? localItem.bonusRows,
+          observacoes: remoteItem.observacoes ?? localItem.observacoes,
+          pagamentoPix: remoteItem.pagamentoPix ?? localItem.pagamentoPix,
+          signatureDataUrl: remoteItem.signatureDataUrl || localItem.signatureDataUrl,
+          responsavel: remoteItem.responsavel || localItem.responsavel,
+          pdfUri: remoteItem.pdfUri || localItem.pdfUri,
+        } as Measurement;
+      });
+
+      const remoteIds = new Set(mergedRemote.map((m) => m.id));
+      const localOnly = local.filter((m) => !remoteIds.has(m.id));
+      const merged = [...mergedRemote, ...localOnly];
+
+      await writeAll(merged);
+      return retrofitMeasurementClientNames(merged);
     }
   } catch (error) {
     console.warn('Falha ao buscar medições remotas, usando local:', error);
@@ -662,6 +706,7 @@ export async function listMeasurements(): Promise<Measurement[]> {
 
 export async function updateMeasurementPdf(id: string, pdfUri: string) {
   const all = await readAll();
+  let updatedMeasurement: Measurement | undefined;
   const next = all.map((m) =>
     m.id === id
       ? {
@@ -680,7 +725,28 @@ export async function updateMeasurementPdf(id: string, pdfUri: string) {
         }
       : m
   );
+  updatedMeasurement = next.find((m) => m.id === id);
   await writeAll(next);
+
+  if (!updatedMeasurement) {
+    return;
+  }
+
+  try {
+    await homologRequest('/homolog/measurements/upsert', {
+      method: 'POST',
+      body: JSON.stringify(updatedMeasurement),
+    });
+  } catch {
+    await enqueueSyncPending({
+      entityType: 'MEDICAO',
+      entityId: updatedMeasurement.id,
+      endpoint: `${API_BASE_URL}/homolog/measurements/upsert`,
+      method: 'POST',
+      payload: updatedMeasurement,
+      reason: 'Falha ao persistir atualização de PDF da medição no Supabase (homologação)',
+    });
+  }
 }
 
 export async function updateMeasurementSyncStatus(

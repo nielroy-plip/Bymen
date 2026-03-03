@@ -1,7 +1,8 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text, ScrollView } from 'react-native';
+import React, { useCallback, useMemo, useState } from 'react';
+import { View, Text, ScrollView, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { useFocusEffect } from '@react-navigation/native';
 import { RootStackParamList } from '../routes';
 import Button from '../components/Button';
 import { listMeasurements, listProducts, listSyncPending, Measurement, SyncPendingItem } from '../services/api';
@@ -12,10 +13,9 @@ export default function DashboardScreen({ navigation }: Props) {
   const [measurements, setMeasurements] = useState<Measurement[]>([]);
   const [syncPending, setSyncPending] = useState<SyncPendingItem[]>([]);
   const [criticalStockCount, setCriticalStockCount] = useState(0);
-  const [criticalStockItems, setCriticalStockItems] = useState<Array<{ id: string; nome: string; estoque: number }>>([]);
+  const [criticalStockItems, setCriticalStockItems] = useState<Array<{ id: string; nome: string; linha: string; estoque: number }>>([]);
 
-  useEffect(() => {
-    async function loadData() {
+  const loadData = useCallback(async () => {
       const [ms, pendings, products] = await Promise.all([
         listMeasurements(),
         listSyncPending(),
@@ -25,14 +25,22 @@ export default function DashboardScreen({ navigation }: Props) {
       setSyncPending(pendings);
       const critical = products
         .filter((p: any) => (p.estoque ?? 0) <= 10)
-        .map((p: any) => ({ id: p.id, nome: p.nome, estoque: p.estoque ?? 0 }))
+        .map((p: any) => ({ id: p.id, nome: p.nome, linha: p.linha ?? '-', estoque: p.estoque ?? 0 }))
         .sort((a: any, b: any) => a.estoque - b.estoque);
       setCriticalStockCount(critical.length);
       setCriticalStockItems(critical);
-    }
-
-    loadData();
   }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadData();
+      const timer = setInterval(() => {
+        loadData();
+      }, 5000);
+
+      return () => clearInterval(timer);
+    }, [loadData])
+  );
 
   const kpis = useMemo(() => {
     const now = new Date();
@@ -124,12 +132,15 @@ export default function DashboardScreen({ navigation }: Props) {
             <Text style={{ color: '#991B1B', fontSize: 12, fontWeight: '600' }}>Pendências sync</Text>
             <Text style={{ color: '#111827', fontSize: 20, fontWeight: '700', marginTop: 4 }}>{kpis.pendingSync}</Text>
           </View>
-          <View style={{ width: '48%', backgroundColor: '#FFFBEB', borderColor: '#FEF3C7', borderWidth: 1, borderRadius: 12, padding: 10, marginBottom: 10 }}>
+          <Pressable
+            onPress={() => navigation.navigate('Estoque')}
+            style={{ width: '48%', backgroundColor: '#FFFBEB', borderColor: '#FEF3C7', borderWidth: 1, borderRadius: 12, padding: 10, marginBottom: 10 }}
+          >
             <Text style={{ color: '#92400E', fontSize: 12, fontWeight: '600' }}>Estoque crítico</Text>
             <Text style={{ color: '#111827', fontSize: 20, fontWeight: '700', marginTop: 4 }}>{kpis.criticalStock}</Text>
             {criticalStockItems.slice(0, 3).map((item) => (
               <Text key={item.id} style={{ color: '#92400E', fontSize: 11, marginTop: 2 }} numberOfLines={1}>
-                • {item.nome} ({item.estoque})
+                • {item.nome} {item.linha !== '-' ? `(${item.linha})` : ''} ({item.estoque})
               </Text>
             ))}
             {criticalStockItems.length > 3 && (
@@ -137,7 +148,10 @@ export default function DashboardScreen({ navigation }: Props) {
                 +{criticalStockItems.length - 3} produtos
               </Text>
             )}
-          </View>
+            <Text style={{ color: '#92400E', fontSize: 11, marginTop: 6, fontWeight: '700' }}>
+              Toque para abrir estoque
+            </Text>
+          </Pressable>
         </View>
 
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' }}>

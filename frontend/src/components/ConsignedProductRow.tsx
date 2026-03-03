@@ -87,7 +87,7 @@ export default function ConsignedProductRow({ product, onChange, initialQuantida
           {product.nome}
         </Text>
         <Text style={{ fontSize: fontSize.small, color: '#6B7280', marginTop: 2 }}>
-          {product.linha} • {product.cap}ml • R$ {product.preco.toFixed(2)}
+          {product.linha} • {product.cap}ml • R${product.preco.toFixed(2)}
         </Text>
       </View>
 
@@ -139,7 +139,7 @@ export default function ConsignedProductRow({ product, onChange, initialQuantida
           Novo Estoque: <Text style={{ fontWeight: '600', color: '#111827' }}>{calculated.novoEstoque}</Text>
         </Text>
         <Text style={{ fontSize: fontSize.small, fontWeight: '700', color: '#059669' }}>
-          R$ {calculated.valorTotal.toFixed(2)}
+          R${calculated.valorTotal.toFixed(2)}
         </Text>
       </View>
     </View>

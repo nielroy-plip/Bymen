@@ -1,8 +1,53 @@
 import * as Print from 'expo-print';
+import * as FileSystem from 'expo-file-system';
 import { formatCurrency } from '../utils/format';
 import { Client } from '../data/clients';
 import { MeasurementRow } from './api';
 import { PRODUCTS, PRODUTOS_BANCADA } from '../data/products';
+import { getProductUnit } from '../utils/product';
+
+function toSafeFilePart(value: string) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9\s_-]/g, '')
+    .trim()
+    .replace(/\s+/g, '_');
+}
+
+function toDateOnly(dateTime: string) {
+  const [datePart] = String(dateTime || '').split(' ');
+  const [d, m, y] = datePart.split('/');
+  if (d && m && y) {
+    return `${d.padStart(2, '0')}-${m.padStart(2, '0')}-${y}`;
+  }
+  const now = new Date();
+  const day = String(now.getDate()).padStart(2, '0');
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const year = now.getFullYear();
+  return `${day}-${month}-${year}`;
+}
+
+async function saveNamedPdf(html: string, filePrefix: string, clientName: string, dateTime: string) {
+  const { uri } = await Print.printToFileAsync({ html });
+  const safeClient = toSafeFilePart(clientName) || 'Barbearia';
+  const safeDate = toDateOnly(dateTime);
+  const fileName = `${toSafeFilePart(filePrefix)}_${safeClient}_${safeDate}.pdf`;
+  const baseDir = FileSystem.documentDirectory || FileSystem.cacheDirectory;
+  if (!baseDir) return uri;
+  const targetUri = `${baseDir}${fileName}`;
+
+  try {
+    const existing = await FileSystem.getInfoAsync(targetUri);
+    if (existing.exists) {
+      await FileSystem.deleteAsync(targetUri, { idempotent: true });
+    }
+    await FileSystem.copyAsync({ from: uri, to: targetUri });
+    return targetUri;
+  } catch {
+    return uri;
+  }
+}
 
 export async function generateStockPDF(params: {
   client: Client;
@@ -15,7 +60,7 @@ export async function generateStockPDF(params: {
       (r) =>
         `<tr>
           <td style="padding:8px;border:1px solid #e5e7eb">${r.nome}</td>
-          <td style="padding:8px;border:1px solid #e5e7eb">${r.cap}${r.nome.includes('Pomada') || r.nome.includes('Pó') ? 'g' : 'ml'}</td>
+          <td style="padding:8px;border:1px solid #e5e7eb">${r.cap}${getProductUnit(r.nome)}</td>
           <td style="padding:8px;border:1px solid #e5e7eb">${formatCurrency(r.preco).replace('.', ',')}</td>
           <td style="padding:8px;border:1px solid #e5e7eb">${r.precoSugestao ? formatCurrency(r.precoSugestao).replace('.', ',') : '-'}</td>
           <td style="padding:8px;border:1px solid #e5e7eb">${r.estoqueAtual}</td>
@@ -54,28 +99,7 @@ export async function generateStockPDF(params: {
   </html>
   `;
 
-  // Gera nome seguro para o arquivo baseado no nome do cliente
-  // Nome do arquivo: Barbearia_nome_DATA.pdf
-  const safeName = params.client.nome
-    ? params.client.nome.normalize('NFD').replace(/[^\w\s-]/g, '').replace(/\s+/g, '_')
-    : 'Barbearia';
-  // Usa apenas a data (sem hora) para o nome do arquivo
-  let data = '';
-  if (params.dateTime) {
-    // Tenta extrair data no formato dd-mm-yyyy
-    const d = new Date(params.dateTime);
-    if (!isNaN(d.getTime())) {
-      const dia = String(d.getDate()).padStart(2, '0');
-      const mes = String(d.getMonth() + 1).padStart(2, '0');
-      const ano = d.getFullYear();
-      data = `${dia}-${mes}-${ano}`;
-    } else {
-      // Se não for data válida, usa string pura
-      data = params.dateTime.replace(/[^\d-]/g, '');
-    }
-  }
-  const { uri } = await Print.printToFileAsync({ html });
-  return uri;
+  return saveNamedPdf(html, 'Estoque', params.client?.nome || 'Barbearia', params.dateTime);
 }
 
 export async function generateMeasurementPDF(params: {
@@ -110,7 +134,7 @@ export async function generateMeasurementPDF(params: {
         `<tr>
           <td style="padding:8px;border:1px solid #3B82F6">${r.nome}</td>
           <td style="padding:8px;border:1px solid #3B82F6">${r.linha}</td>
-          <td style="padding:8px;border:1px solid #3B82F6;text-align:center">${r.cap}${r.cap <= 100 && r.cap >= 10 ? 'g' : 'ml'}</td>
+          <td style="padding:8px;border:1px solid #3B82F6;text-align:center">${r.cap}${getProductUnit(r.nome)}</td>
           <td style="padding:8px;border:1px solid #3B82F6;text-align:right">${formatCurrency(r.preco).replace('.', ',')}</td>
           <td style="padding:8px;border:1px solid #3B82F6;text-align:right">${formatCurrency(r.precoSugestao).replace('.', ',')}</td>
           <td style="padding:8px;border:1px solid #3B82F6;text-align:center">${r.quantidadeComprada}</td>
@@ -184,7 +208,7 @@ export async function generateMeasurementPDF(params: {
         `<tr>
           <td style="padding:8px;border:1px solid #DC2626">${r.nome}</td>
           <td style="padding:8px;border:1px solid #DC2626">${r.linha || '-'}</td>
-          <td style="padding:8px;border:1px solid #DC2626;text-align:center">${r.cap}${r.cap <= 100 && r.cap >= 10 ? 'g' : 'ml'}</td>
+          <td style="padding:8px;border:1px solid #DC2626;text-align:center">${r.cap}${getProductUnit(r.nome)}</td>
           <td style="padding:8px;border:1px solid #DC2626;text-align:right">${formatCurrency(r.preco).replace('.', ',')}</td>
           <td style="padding:8px;border:1px solid #DC2626;text-align:center">${r.quantidadeComprada}</td>
           <td style="padding:8px;border:1px solid #DC2626;text-align:right;font-weight:600;color:#DC2626">${formatCurrency(r.valorTotal).replace('.', ',')}</td>
@@ -230,7 +254,7 @@ export async function generateMeasurementPDF(params: {
         `<tr>
           <td style="padding:8px;border:1px solid #059669">${r.nome}</td>
           <td style="padding:8px;border:1px solid #059669">${r.linha || '-'}</td>
-          <td style="padding:8px;border:1px solid #059669;text-align:center">${r.cap}${r.cap <= 100 && r.cap >= 10 ? 'g' : 'ml'}</td>
+          <td style="padding:8px;border:1px solid #059669;text-align:center">${r.cap}${getProductUnit(r.nome)}</td>
           <td style="padding:8px;border:1px solid #059669;text-align:center">${r.quantidadeComprada}</td>
         </tr>`
     )
@@ -347,32 +371,23 @@ export async function generateMeasurementPDF(params: {
   </html>
   `;
 
-  // Gera nome seguro para o arquivo baseado no nome do primeiro produto ou estoque
-  // Nome do arquivo: Barbearia_nome_DATA.pdf
-  let safeName = 'Barbearia';
-  if (params.client && params.client.nome) {
-    safeName = params.client.nome.normalize('NFD').replace(/[^\w\s-]/g, '').replace(/\s+/g, '_');
-  } else if (params.responsavelMedicao) {
-    safeName = params.responsavelMedicao.normalize('NFD').replace(/[^\w\s-]/g, '').replace(/\s+/g, '_');
-  }
-  // Usa apenas a data (sem hora) para o nome do arquivo
-  let data = '';
-  if (params.dateTime) {
-    const d = new Date(params.dateTime);
-    if (!isNaN(d.getTime())) {
-      const dia = String(d.getDate()).padStart(2, '0');
-      const mes = String(d.getMonth() + 1).padStart(2, '0');
-      const ano = d.getFullYear();
-      data = `${dia}-${mes}-${ano}`;
-    } else {
-      data = params.dateTime.replace(/[^\d-]/g, '');
-    }
-  }
-  const { uri } = await Print.printToFileAsync({ html });
-  return uri;
+  const clientName = params.client?.nome || params.responsavelMedicao || 'Barbearia';
+  return saveNamedPdf(html, 'Medicao', clientName, params.dateTime);
 }
 
-export async function generateEstoquePDF({ estoque, bancada, signatureDataUrl }: { estoque: Record<string, string>, bancada: Record<string, string>, signatureDataUrl?: string }): Promise<string> {
+export async function generateEstoquePDF({
+  estoque,
+  bancada,
+  signatureDataUrl,
+  clientName,
+  dateTime,
+}: {
+  estoque: Record<string, string>,
+  bancada: Record<string, string>,
+  signatureDataUrl?: string,
+  clientName?: string,
+  dateTime?: string,
+}): Promise<string> {
   const hasProdutos = PRODUCTS.some((p: any) => parseInt(estoque[p.id] || '0', 10) > 0);
   const hasBancada = PRODUTOS_BANCADA.some((p: any) => parseInt(bancada[p.id] || '0', 10) > 0);
 
@@ -386,10 +401,10 @@ export async function generateEstoquePDF({ estoque, bancada, signatureDataUrl }:
       `<tr>
         <td style='padding:8px;border:1px solid #3B82F6;'>${p.nome}</td>
         <td style='padding:8px;border:1px solid #3B82F6;'>${p.linha}</td>
-        <td style='padding:8px;border:1px solid #3B82F6;'>${p.cap}${p.nome.includes('Pomada')||p.nome.includes('Pó')?'g':'ml'}</td>
+        <td style='padding:8px;border:1px solid #3B82F6;'>${p.cap}${getProductUnit(p.nome)}</td>
         <td style='padding:8px;border:1px solid #3B82F6;'>${estoque[p.id]}</td>
-        <td style='padding:8px;border:1px solid #3B82F6;'>R$ ${p.preco.toFixed(2).replace('.',',')}</td>
-        <td style='padding:8px;border:1px solid #3B82F6;'>R$ ${p.precoSugestao ? p.precoSugestao.toFixed(2).replace('.',',') : '-'}</td>
+        <td style='padding:8px;border:1px solid #3B82F6;'>R${p.preco.toFixed(2).replace('.',',')}</td>
+        <td style='padding:8px;border:1px solid #3B82F6;'>R${p.precoSugestao ? p.precoSugestao.toFixed(2).replace('.',',') : '-'}</td>
       </tr>`
     ).join('');
   const produtosSection = produtosRowsHTML ? `
@@ -418,7 +433,7 @@ export async function generateEstoquePDF({ estoque, bancada, signatureDataUrl }:
     .map((p: any) => {
       const qtd = parseInt(bancada[p.id]||'0');
       const total = qtd * p.preco;
-      return `<tr><td style='padding:8px;border:1px solid #DC2626;'>${p.nome}</td><td style='padding:8px;border:1px solid #DC2626;'>${p.linha}</td><td style='padding:8px;border:1px solid #DC2626;'>${p.cap}${p.nome.includes('Pomada')||p.nome.includes('Pó')?'g':'ml'}</td><td style='padding:8px;border:1px solid #DC2626;'>${qtd}</td><td style='padding:8px;border:1px solid #DC2626;'>R$ ${p.preco.toFixed(2).replace('.',',')}</td><td style='padding:8px;border:1px solid #DC2626;'>R$ ${total.toFixed(2).replace('.',',')}</td></tr>`;
+      return `<tr><td style='padding:8px;border:1px solid #DC2626;'>${p.nome}</td><td style='padding:8px;border:1px solid #DC2626;'>${p.linha}</td><td style='padding:8px;border:1px solid #DC2626;'>${p.cap}${getProductUnit(p.nome)}</td><td style='padding:8px;border:1px solid #DC2626;'>${qtd}</td><td style='padding:8px;border:1px solid #DC2626;'>R${p.preco.toFixed(2).replace('.',',')}</td><td style='padding:8px;border:1px solid #DC2626;'>R${total.toFixed(2).replace('.',',')}</td></tr>`;
     }).join('');
   const bancadaSection = bancadaRowsHTML ? `
       <div style="margin-top:32px;padding:16px;background:#FEF2F2;border:2px solid #DC2626;border-radius:8px">
@@ -462,6 +477,5 @@ export async function generateEstoquePDF({ estoque, bancada, signatureDataUrl }:
     </body>
   </html>
   `;
-  const { uri } = await Print.printToFileAsync({ html });
-  return uri;
+  return saveNamedPdf(html, 'EstoqueInicial', clientName || 'Barbearia', dateTime || '');
 }

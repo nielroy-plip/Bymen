@@ -2,12 +2,13 @@ export function formatCurrency(v: number) {
   try {
     let formatted = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v);
     // Garante que valores acima de 1.000,00 fiquem com ponto separador e vírgula decimal
-    return formatted.replace(/\.(\d{3}),/, '.$1,');
+    formatted = formatted.replace(/\.(\d{3}),/, '.$1,');
+    return formatted.replace(/^R\$\s*/, 'R$');
   } catch {
     let val = v.toFixed(2).replace('.', ',');
     // Adiciona ponto separador para milhares
     val = val.replace(/(\d)(?=(\d{3})+,)/g, '$1.');
-    return `R$ ${val}`;
+    return `R$${val}`;
   }
 }
 

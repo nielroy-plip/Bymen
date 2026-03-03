@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import * as Sharing from 'expo-sharing';
-import { View, Text, ScrollView, Alert, Pressable, Platform } from 'react-native';
+import { View, Text, ScrollView, Alert, Pressable, Platform, KeyboardAvoidingView, Keyboard, TouchableWithoutFeedback } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../routes';
 import Card from '../components/Card';
@@ -12,6 +12,7 @@ import SignaturePad from '../components/SignaturePad';
 import { Ionicons } from '@expo/vector-icons';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { addClientInitialStock, removeProductStock, saveClient } from '../services/api';
+import { getProductUnit } from '../utils/product';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'NovoEstoque'>;
 
@@ -165,7 +166,19 @@ type Props = NativeStackScreenProps<RootStackParamList, 'NovoEstoque'>;
           return;
         }
 
-        const uri = await generateEstoquePDF({ estoque, bancada, signatureDataUrl });
+        const draftClientName = route.params?.draftClient?.nome || 'Barbearia';
+        const now = new Date();
+        const day = String(now.getDate()).padStart(2, '0');
+        const month = String(now.getMonth() + 1).padStart(2, '0');
+        const year = now.getFullYear();
+        const dateOnly = `${day}/${month}/${year}`;
+        const uri = await generateEstoquePDF({
+          estoque,
+          bancada,
+          signatureDataUrl,
+          clientName: draftClientName,
+          dateTime: dateOnly,
+        });
         setPdfUri(uri);
 
         if (await Sharing.isAvailableAsync()) {
@@ -208,7 +221,12 @@ type Props = NativeStackScreenProps<RootStackParamList, 'NovoEstoque'>;
     }
 
     return (
-      <View style={{ flex: 1, backgroundColor: '#fff' }}>
+      <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
+        <KeyboardAvoidingView
+          style={{ flex: 1, backgroundColor: '#fff' }}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 72 : 0}
+        >
         <View style={{ flexDirection: 'row', marginTop: 16, marginHorizontal: 24, marginBottom: 0, gap: 8 }}>
           <Pressable
             onPress={() => setActiveTab('produtos')}
@@ -242,7 +260,7 @@ type Props = NativeStackScreenProps<RootStackParamList, 'NovoEstoque'>;
             <Text style={{ fontWeight: '700', color: activeTab === 'bancada' ? '#FFFFFF' : '#6B7280' }}>Bancada</Text>
           </Pressable>
         </View>
-        <ScrollView contentContainerStyle={{ padding: 24 }}>
+        <ScrollView contentContainerStyle={{ padding: 24 }} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
           <Text style={{ fontSize: 26, fontWeight: '700', color: '#111827', marginBottom: 16 }}>Novo Estoque Inicial</Text>
           {activeTab === 'produtos' && (
             <>
@@ -252,7 +270,7 @@ type Props = NativeStackScreenProps<RootStackParamList, 'NovoEstoque'>;
                   <Card>
                     <Text style={{ fontSize: 16, fontWeight: '600', color: '#111827' }}>{p.nome}</Text>
                     <Text style={{ color: '#6B7280' }}>Linha: {p.linha}</Text>
-                    <Text style={{ color: '#6B7280' }}>Capacidade: {p.cap}{p.nome.includes('Pomada')||p.nome.includes('Pó')?'g':'ml'}</Text>
+                    <Text style={{ color: '#6B7280' }}>Capacidade: {p.cap}{getProductUnit(p.nome)}</Text>
                     <Input
                       label="Quantidade Inicial"
                       value={estoque[p.id] || ''}
@@ -273,8 +291,8 @@ type Props = NativeStackScreenProps<RootStackParamList, 'NovoEstoque'>;
                   <Card>
                     <Text style={{ fontSize: 16, fontWeight: '600', color: '#111827' }}>{p.nome}</Text>
                     <Text style={{ color: '#6B7280' }}>Linha: {p.linha}</Text>
-                    <Text style={{ color: '#6B7280' }}>Capacidade: {p.cap}{p.nome.includes('Pomada')||p.nome.includes('Pó')?'g':'ml'}</Text>
-                    <Text style={{ color: '#991B1B', fontWeight: '600' }}>Valor unitário: R$ {p.preco.toFixed(2).replace('.',',')}</Text>
+                    <Text style={{ color: '#6B7280' }}>Capacidade: {p.cap}{getProductUnit(p.nome)}</Text>
+                    <Text style={{ color: '#991B1B', fontWeight: '600' }}>Valor unitário: R${p.preco.toFixed(2).replace('.',',')}</Text>
                     <Input
                       label="Quantidade Inicial"
                       value={bancada[p.id] || ''}
@@ -293,7 +311,7 @@ type Props = NativeStackScreenProps<RootStackParamList, 'NovoEstoque'>;
             <Text style={{ color: '#3B82F6', fontSize: 16, marginBottom: 4 }}>Total de produtos: {totalProdutos}</Text>
             <Text style={{ color: '#DC2626', fontSize: 16, marginBottom: 4 }}>Total de produtos de bancada: {totalBancadaQtd}</Text>
             {totalBancadaQtd > 0 && (
-              <Text style={{ color: '#991B1B', fontSize: 16, fontWeight: '700' }}>Valor total dos produtos de bancada: R$ {totalBancadaValor.toFixed(2).replace('.', ',')}</Text>
+              <Text style={{ color: '#991B1B', fontSize: 16, fontWeight: '700' }}>Valor total dos produtos de bancada: R${totalBancadaValor.toFixed(2).replace('.', ',')}</Text>
             )}
             <Text style={{ color: stockSent ? '#16A34A' : '#B45309', fontSize: 14, marginTop: 8 }}>
               {stockSent ? 'Status: estoque inicial enviado.' : 'Status: estoque inicial pendente de envio.'}
@@ -318,7 +336,8 @@ type Props = NativeStackScreenProps<RootStackParamList, 'NovoEstoque'>;
             </Text>
           )}
         </ScrollView>
-      </View>
+        </KeyboardAvoidingView>
+      </TouchableWithoutFeedback>
     );
   };
   
