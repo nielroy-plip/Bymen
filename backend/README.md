@@ -5,7 +5,7 @@ Estrutura preparada para homologação com Supabase (PostgreSQL), Prisma e integ
 ## Configuração rápida (homologação)
 
 1. Copie `.env.homolog.example` para `.env`.
-2. Preencha `DATABASE_URL` com a connection string do Supabase.
+2. Preencha `DATABASE_URL` com a connection string do Supabase (preferencialmente pooler).
 3. Preencha as variáveis `BLING_*` de homologação.
 4. Execute:
 
@@ -17,6 +17,18 @@ npm run start:dev
 ```
 
 API sobe em `http://localhost:3000/api`.
+
+### Observação importante para deploy (Northflank)
+
+- Defina `DATABASE_URL` em **Runtime Variables** (não apenas em Build Variables).
+- Use pooler do Supabase (porta `6543`) com SSL:
+
+```text
+postgresql://postgres.<project_ref>:<password>@<pooler_host>:6543/postgres?pgbouncer=true&connection_limit=1&sslmode=require
+```
+
+- Se o log mostrar `db.<project_ref>.supabase.co:5432`, o serviço ainda está usando a URL antiga.
+- Use apenas um comando de start no serviço: `npm start` (ou `npm run start:prod`).
 
 ## Endpoints Bling disponíveis (base)
 
