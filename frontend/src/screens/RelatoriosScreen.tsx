@@ -105,6 +105,16 @@ export default function RelatoriosScreen() {
     };
   }, [measurements, barbeariaId, monthWindow]);
 
+  const filteredMeasurementsInPeriod = useMemo(() => {
+    const validMonthKeys = new Set(monthWindow.map((m) => m.key));
+    return measurements.filter((m) => {
+      if (barbeariaId && m.clientId !== barbeariaId) return false;
+      const parsed = parseMeasurementDate(m.dateTime);
+      if (!parsed) return false;
+      return validMonthKeys.has(getMonthKey(parsed));
+    });
+  }, [measurements, barbeariaId, monthWindow]);
+
   const vendasPorMesFiltrado = {
     labels: salesData.labels,
     datasets: [
@@ -118,8 +128,13 @@ export default function RelatoriosScreen() {
 
   const stockData = useMemo(() => {
     const grouped = new Map<string, number>();
-    products.forEach((p) => {
-      grouped.set(p.nome, (grouped.get(p.nome) || 0) + Number(p.estoque || 0));
+    filteredMeasurementsInPeriod.forEach((m) => {
+      (m.medicaoRows || []).forEach((row: any) => {
+        grouped.set(row.nome, (grouped.get(row.nome) || 0) + Number(row.vendidos || 0));
+      });
+      (m.bancadaRows || []).forEach((row: any) => {
+        grouped.set(row.nome, (grouped.get(row.nome) || 0) + Number(row.quantidadeComprada || 0));
+      });
     });
 
     let entries = Array.from(grouped.entries());
@@ -129,11 +144,15 @@ export default function RelatoriosScreen() {
       entries = entries.sort((a, b) => b[1] - a[1]).slice(0, 6);
     }
 
+    if (entries.length === 0) {
+      entries = [['Sem dados', 0]];
+    }
+
     return {
       labels: entries.map(([name]) => name),
       data: entries.map(([_, value]) => value),
     };
-  }, [products, produtoFiltro]);
+  }, [filteredMeasurementsInPeriod, produtoFiltro]);
 
   const estoqueProdutos = {
     labels: stockData.labels,
@@ -311,7 +330,7 @@ export default function RelatoriosScreen() {
           <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: isSmallScreen ? 6 : 0 }}>
             <Ionicons name="cube-outline" size={22} color="#DC2626" style={{ marginRight: 8 }} />
             <Text style={{ fontSize: isSmallScreen ? 15 : 19, fontWeight: '700', color: '#DC2626', letterSpacing: 0.2 }}>
-              Estoque de Produtos
+              Produtos no período
               <Text style={{ fontSize: 15, color: '#B91C1C', fontWeight: '500' }}> — {barbearias.find(b => b.id === barbeariaId)?.nome || ''}</Text>
             </Text>
           </View>
@@ -338,25 +357,32 @@ export default function RelatoriosScreen() {
             </TouchableOpacity>
           ))}
         </View>
-        <BarChart
-          data={estoqueProdutos}
-          width={screenWidth - (isSmallScreen ? 16 : 48)}
-          height={isSmallScreen ? 160 : 220}
-          yAxisLabel={''}
-          yAxisSuffix={''}
-          chartConfig={{
-            backgroundColor: '#FEF2F2',
-            backgroundGradientFrom: '#FEF2F2',
-            backgroundGradientTo: '#FEF2F2',
-            decimalPlaces: 0,
-            color: (opacity = 1) => `rgba(220, 38, 38, ${opacity})`,
-            labelColor: (opacity = 1) => `rgba(153, 27, 27, ${opacity})`,
-            style: { borderRadius: 16 },
-          }}
-          style={{ borderRadius: 16 }}
-          withCustomBarColorFromData={false}
-          showBarTops={true}
-        />
+        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+          <BarChart
+            data={estoqueProdutos}
+            width={Math.max(screenWidth - (isSmallScreen ? 16 : 48), estoqueProdutos.labels.length * 120)}
+            height={isSmallScreen ? 200 : 260}
+            yAxisLabel={''}
+            yAxisSuffix={''}
+            verticalLabelRotation={20}
+            chartConfig={{
+              backgroundColor: '#FEF2F2',
+              backgroundGradientFrom: '#FEF2F2',
+              backgroundGradientTo: '#FEF2F2',
+              decimalPlaces: 0,
+              color: (opacity = 1) => `rgba(220, 38, 38, ${opacity})`,
+              labelColor: (opacity = 1) => `rgba(153, 27, 27, ${opacity})`,
+              style: { borderRadius: 16 },
+              propsForLabels: {
+                fontSize: '11',
+              },
+            }}
+            style={{ borderRadius: 16 }}
+            withCustomBarColorFromData={false}
+            showBarTops={true}
+            fromZero
+          />
+        </ScrollView>
       </View>
 
       <Text style={{ color: '#6B7280', fontSize: 14, textAlign: 'center', marginTop: 8, fontStyle: 'italic' }}>
@@ -376,6 +402,6 @@ export default function RelatoriosScreen() {
           </View>
         </View>
       </Modal>
-  </ScrollView>
-);
+    </ScrollView>
+  );
 }

@@ -158,6 +158,7 @@ export default function HistoricoMedicoesScreen({ navigation }: Props) {
         ) : (
           filteredItems.map((it) => {
             const client = clients.find((c) => c.id === it.clientId);
+            const clientDisplayName = client?.nome || it.clientName || 'Barbearia não encontrada';
             const statusStyle = getStatusStyle(it.status);
             const syncStyle = getSyncStyle(it.syncStatus);
             const timeline = Array.isArray(it.timeline) ? it.timeline : [];
@@ -165,7 +166,7 @@ export default function HistoricoMedicoesScreen({ navigation }: Props) {
 
             return (
               <View key={it.id} style={{ paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' }}>
-                <Text style={{ color: '#111827', fontWeight: '600' }}>{client?.nome || 'Cliente não encontrado'}</Text>
+                <Text style={{ color: '#111827', fontWeight: '600' }}>{clientDisplayName}</Text>
                 <Text style={{ color: '#6B7280' }}>{it.dateTime}</Text>
                 <Text style={{ color: '#111827' }}>{formatCurrency(it.totalGeral || 0).replace('.', ',')}</Text>
                 <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>

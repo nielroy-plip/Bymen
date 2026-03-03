@@ -57,6 +57,7 @@ type Props = {
   initialVendidos?: number;
   initialRepostos?: number;
   showSugestao?: boolean;
+  averageSale3Months?: number;
 };
 
 function parseNumber(v: string) {
@@ -71,13 +72,28 @@ function computeRow(ea: number, v: number, r: number) {
 }
 
 
-export default function ProductRow({ product, onChange, isStockOnly = false, initialEstoque, initialVendidos, initialRepostos, showSugestao = true }: Props & { showSugestao?: boolean }) {
-  const [estoqueAtual, setEstoqueAtual] = useState('');
-  const [vendidos, setVendidos] = useState('');
-  const [repostos, setRepostos] = useState('');
+export default function ProductRow({
+  product,
+  onChange,
+  isStockOnly = false,
+  initialEstoque,
+  initialVendidos,
+  initialRepostos,
+  showSugestao = true,
+  averageSale3Months = 0,
+}: Props) {
+  const [estoqueAtual, setEstoqueAtual] = useState(String(initialEstoque ?? product.estoque ?? 0));
+  const [vendidos, setVendidos] = useState(String(initialVendidos ?? 0));
+  const [repostos, setRepostos] = useState(String(initialRepostos ?? 0));
   const [produtosRetirados, setProdutosRetirados] = useState('');
   // Controla se o usuário está editando manualmente o campo Produtos Retirados
   const [produtosRetiradosManual, setProdutosRetiradosManual] = useState(false);
+
+  useEffect(() => {
+    setEstoqueAtual(String(initialEstoque ?? product.estoque ?? 0));
+    setVendidos(String(initialVendidos ?? 0));
+    setRepostos(String(initialRepostos ?? 0));
+  }, [product.id, product.estoque, initialEstoque, initialVendidos, initialRepostos]);
 
   // Sempre que qualquer campo relevante mudar, se produtosRetiradosManual estiver ativo, força atualização do novo estoque
   React.useEffect(() => {
@@ -152,12 +168,12 @@ export default function ProductRow({ product, onChange, isStockOnly = false, ini
         Linha: {product.linha}
       </Text>
       <Text style={{ fontSize: fontSize.small, color: '#6B7280', marginBottom: 2 }}>
-        Revenda: R$ {product.preco.toFixed(2).replace('.', ',')}
+        Revenda: R${product.preco.toFixed(2).replace('.', ',')}
       </Text>
       {/* Exibe sugestão apenas se showSugestao for true */}
       {showSugestao && (
         <Text style={{ fontSize: fontSize.small, color: '#6B7280', marginBottom: isTablet ? 12 : 8 }}>
-          Sugestão: R$ {product.precoSugestao?.toFixed(2).replace('.', ',') ?? '0,00'}
+          Sugestão: R${product.precoSugestao?.toFixed(2).replace('.', ',') ?? '0,00'}
         </Text>
       )}
       {isStockOnly ? (
@@ -174,10 +190,10 @@ export default function ProductRow({ product, onChange, isStockOnly = false, ini
         </View>
       ) : (
         <>
-          {/* Primeira linha: Produtos em Estoque | Produtos Vendidos */}
+          {/* Primeira linha: Em Estoque | Vendidos */}
           <View style={styles.gridRow}>
             <View style={styles.gridColWithMargin}>
-              <Text style={styles.label}>Produtos em Estoque</Text>
+              <Text style={styles.label}>Em Estoque</Text>
               <View style={styles.numericFieldContainer}>
                 <TextInput
                   value={estoqueAtual}
@@ -195,7 +211,7 @@ export default function ProductRow({ product, onChange, isStockOnly = false, ini
               </View>
             </View>
             <View style={styles.gridCol}>
-              <Text style={styles.label}>Produtos Vendidos</Text>
+              <Text style={styles.label}>Vendidos</Text>
               <View style={styles.numericFieldContainer}>
                 <TextInput
                   value={vendidos}
@@ -213,10 +229,10 @@ export default function ProductRow({ product, onChange, isStockOnly = false, ini
               </View>
             </View>
           </View>
-          {/* Segunda linha: Produtos Repostos | Produtos Não Vendidos */}
+          {/* Segunda linha: Repostos | Não Vendidos */}
           <View style={styles.gridRow}>
             <View style={styles.gridColWithMargin}>
-              <Text style={styles.label}>Produtos Repostos</Text>
+              <Text style={styles.label}>Repostos</Text>
               <View style={styles.numericFieldContainer}>
                 <TextInput
                   value={repostos}
@@ -234,7 +250,7 @@ export default function ProductRow({ product, onChange, isStockOnly = false, ini
               </View>
             </View>
             <View style={styles.gridCol}>
-              <Text style={styles.label}>Produtos Não Vendidos</Text>
+              <Text style={styles.label}>Não Vendidos</Text>
               <View style={styles.numericFieldContainer}>
                 <Text style={{ fontSize: fontSize.large, color: numbers.diferenca === 0 ? '#9CA3AF' : '#111827' }}>{numbers.diferenca}</Text>
               </View>
@@ -242,10 +258,10 @@ export default function ProductRow({ product, onChange, isStockOnly = false, ini
           </View>
           <View style={{ marginTop: isTablet ? 12 : 8 }}>
             <Text style={{ color: '#6B7280', fontSize: fontSize.small, marginBottom: 4 }}>
-              Venda Média = 2
+              Venda Média (3 meses) = {String(averageSale3Months.toFixed(1)).replace('.', ',')}
             </Text>
             <Text style={{ color: '#111827', fontSize: fontSize.base, fontWeight: '600', marginBottom: 2 }}>
-              Produtos Retirados
+              Retirados
             </Text>
             <View style={styles.numericFieldContainer}>
               <TextInput
@@ -264,7 +280,7 @@ export default function ProductRow({ product, onChange, isStockOnly = false, ini
               />
             </View>
             <Text style={{ color: '#111827', fontSize: fontSize.base, fontWeight: '600', marginTop: 8, marginBottom: 2 }}>
-              Novo Estoque Final
+              Novo estoque
             </Text>
             <View style={styles.numericFieldContainer}>
               <Text style={{ fontSize: fontSize.large, color: numbers.novoEstoque === 0 ? '#9CA3AF' : '#111827' }}>{numbers.novoEstoque}</Text>

@@ -64,7 +64,7 @@ export default function Button({
             flexShrink: 1,
           }}
         >
-          {title}
+          {title.toUpperCase()}
         </Text>
       </View>
     </Pressable>

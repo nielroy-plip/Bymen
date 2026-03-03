@@ -3,7 +3,7 @@ import { View, Text, ScrollView, ActivityIndicator, Pressable, TextInput } from 
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../routes';
 import { Client } from '../data/clients';
-import { listProductsForClient, listClients, MedicaoRow, BancadaRow } from '../services/api';
+import { listProductsForClient, listClients, listMeasurements, MedicaoRow, BancadaRow } from '../services/api';
 import { PRODUTOS_BANCADA } from '../data/products';
 import ProductRow, { Product } from '../components/ProductRow';
 import BancadaRowComponent from '../components/BancadaRow';
@@ -23,6 +23,7 @@ export default function CriarMedicaoScreen({ navigation, route }: Props) {
   const [client, setClient] = useState<Client | undefined>(undefined);
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(false);
+  const [averageSalesByProduct, setAverageSalesByProduct] = useState<Record<string, number>>({});
 
   // ========================================
   // NAVEGAÇÃO POR ABAS
@@ -74,39 +75,83 @@ export default function CriarMedicaoScreen({ navigation, route }: Props) {
   const dateTime = useMemo(() => formatDateTime(new Date()), []);
   const { isTablet, padding, fontSize } = useResponsive();
 
+  function parseMeasurementDate(dateTimeValue: string): Date | null {
+    const [datePart] = String(dateTimeValue || '').split(' ');
+    const [d, m, y] = datePart.split('/');
+    if (!d || !m || !y) return null;
+    const day = Number(d);
+    const month = Number(m) - 1;
+    const year = Number(y);
+    if (!Number.isFinite(day) || !Number.isFinite(month) || !Number.isFinite(year)) return null;
+    return new Date(year, month, day);
+  }
+
   useEffect(() => {
-    listClients().then((clients) => {
+    async function loadData() {
+      const clients = await listClients();
       const c = clients.find((x) => x.id === clientId) || clients[0];
       setClient(c);
-      if (c) {
-        setLoading(true);
-        listProductsForClient(c.id)
-          .then((p) => {
-            setProducts(p);
-            // Preenche os campos com o estoque atual do cliente
-            const medicaoInicial: Record<string, MedicaoRow> = {};
-            p.forEach((prod) => {
-              medicaoInicial[prod.id] = {
-                id: prod.id,
-                nome: prod.nome,
-                linha: prod.linha,
-                cap: prod.cap,
-                preco: prod.preco,
-                precoSugestao: prod.precoSugestao,
-                estoqueAtual: prod.estoque,
-                vendidos: 0,
-                repostos: 0,
-                diferenca: prod.estoque,
-                novoEstoque: prod.estoque,
-                valorMedicao: 0,
-                produtosRetirados: 0
-              };
-            });
-            setMedicaoRows(medicaoInicial);
-          })
-          .finally(() => setLoading(false));
+
+      if (!c) {
+        return;
       }
-    });
+
+      setLoading(true);
+
+      try {
+        const [p, measurements] = await Promise.all([
+          listProductsForClient(c.id),
+          listMeasurements(),
+        ]);
+
+        setProducts(p);
+
+        const now = new Date();
+        const startDate = new Date(now.getFullYear(), now.getMonth() - 2, 1);
+        const productTotals: Record<string, number> = {};
+
+        measurements
+          .filter((m) => m.clientId === c.id)
+          .forEach((m) => {
+            const parsed = parseMeasurementDate(m.dateTime || '');
+            if (!parsed || parsed < startDate) return;
+
+            (m.medicaoRows || []).forEach((row: any) => {
+              productTotals[row.id] = (productTotals[row.id] || 0) + Number(row.vendidos || 0);
+            });
+          });
+
+        const avgMap: Record<string, number> = {};
+        p.forEach((prod) => {
+          avgMap[prod.id] = Number(((productTotals[prod.id] || 0) / 3).toFixed(1));
+        });
+        setAverageSalesByProduct(avgMap);
+
+        const medicaoInicial: Record<string, MedicaoRow> = {};
+        p.forEach((prod) => {
+          medicaoInicial[prod.id] = {
+            id: prod.id,
+            nome: prod.nome,
+            linha: prod.linha,
+            cap: prod.cap,
+            preco: prod.preco,
+            precoSugestao: prod.precoSugestao,
+            estoqueAtual: prod.estoque,
+            vendidos: 0,
+            repostos: 0,
+            diferenca: prod.estoque,
+            novoEstoque: prod.estoque,
+            valorMedicao: 0,
+            produtosRetirados: 0,
+          };
+        });
+        setMedicaoRows(medicaoInicial);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    loadData();
   }, [clientId]);
 
   // ========================================
@@ -249,6 +294,7 @@ export default function CriarMedicaoScreen({ navigation, route }: Props) {
                 initialEstoque={p.estoque}
                 initialVendidos={medicaoRows[p.id]?.vendidos ?? 0}
                 initialRepostos={medicaoRows[p.id]?.repostos ?? 0}
+                averageSale3Months={averageSalesByProduct[p.id] ?? 0}
               />
             ))}
 
@@ -275,9 +321,6 @@ export default function CriarMedicaoScreen({ navigation, route }: Props) {
         {/* ABA: BANCADA */}
         {activeTab === 'bancada' && (
           <View>
-            <Text style={{ fontSize: fontSize.base, color: '#6B7280', marginBottom: isTablet ? 12 : 8 }}>
-              Produtos para uso interno do barbeiro (não vendidos ao cliente)
-            </Text>
             {PRODUTOS_BANCADA.map((p) => (
               <BancadaRowComponent
                 key={p.id}

@@ -164,6 +164,7 @@ export default function Routes() {
         options={({ route }) => ({
           title: route.params && route.params.clientId ? 'Editar Barbearia' : 'Nova Barbearia',
           headerBackTitle: 'Barbearias',
+          headerTitleAlign: 'center',
         })}
       />
       <Stack.Screen
@@ -172,6 +173,7 @@ export default function Routes() {
         options={{
           title: 'Estoque Inicial',
           headerBackTitle: 'Nova Barbearia',
+          headerTitleAlign: 'center',
         }}
       />
       <Stack.Screen

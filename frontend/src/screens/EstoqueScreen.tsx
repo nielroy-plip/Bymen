@@ -143,7 +143,7 @@ export default function EstoqueScreen({ navigation }: Props) {
       <ScrollView contentContainerStyle={{ padding: 24 }}>
         <Text style={{ fontSize: 24, fontWeight: '700', color: '#111827', marginBottom: 16 }}>Estoque</Text>
         {activeTab === 'produtos' && (
-          products.map((p) => (
+          products.filter(p => !p.id.startsWith('b')).map((p) => (
             <View key={p.id} style={{ marginBottom: 16 }}>
               <Card>
                 <Text style={{ fontSize: 18, fontWeight: '600', color: '#111827' }}>{p.nome}</Text>

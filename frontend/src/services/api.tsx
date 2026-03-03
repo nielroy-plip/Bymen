@@ -71,6 +71,7 @@ export type MeasurementTimelineEvent = {
 export type Measurement = {
   id: string;
   clientId: string;
+  clientName?: string;
   dateTime: string;
   // Tabela 1: Medição (produtos vendidos)
   medicaoRows: MedicaoRow[];
@@ -390,18 +391,26 @@ export async function saveClient(client: Client) {
   if (existing) {
     const updated = all.map(c => c.id === client.id ? client : c);
     await writeClients(updated.filter(c => !CLIENTS.find(base => base.id === c.id)));
-    await homologRequest('/homolog/clients/upsert', {
-      method: 'POST',
-      body: JSON.stringify(payload),
-    });
+    try {
+      await homologRequest('/homolog/clients/upsert', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+    } catch (error) {
+      console.warn('Falha ao salvar cliente remoto, mantendo persistência local:', error);
+    }
     return client;
   }
   const next = [client, ...all.filter(c => !CLIENTS.find(base => base.id === c.id))];
   await writeClients(next);
-  await homologRequest('/homolog/clients/upsert', {
-    method: 'POST',
-    body: JSON.stringify(payload),
-  });
+  try {
+    await homologRequest('/homolog/clients/upsert', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  } catch (error) {
+    console.warn('Falha ao salvar cliente remoto, mantendo persistência local:', error);
+  }
   return client;
 }
 
@@ -604,6 +613,37 @@ export async function saveMeasurement(m: Measurement) {
   return normalized;
 }
 
+async function retrofitMeasurementClientNames(items: Measurement[]): Promise<Measurement[]> {
+  if (!Array.isArray(items) || items.length === 0) return items;
+
+  const clients = await readClients();
+  const byId = new Map(clients.map((c) => [c.id, c.nome]));
+
+  let changed = false;
+  const patched = items.map((item) => {
+    if (item.clientName && item.clientName.trim().length > 0) {
+      return item;
+    }
+
+    const name = byId.get(item.clientId);
+    if (!name) {
+      return item;
+    }
+
+    changed = true;
+    return {
+      ...item,
+      clientName: name,
+    };
+  });
+
+  if (changed) {
+    await writeAll(patched);
+  }
+
+  return patched;
+}
+
 export async function listMeasurements(): Promise<Measurement[]> {
   const local = await readAll();
 
@@ -611,13 +651,13 @@ export async function listMeasurements(): Promise<Measurement[]> {
     const remote = await homologRequest<Measurement[]>('/homolog/measurements');
     if (Array.isArray(remote) && remote.length > 0) {
       await writeAll(remote);
-      return remote;
+      return retrofitMeasurementClientNames(remote);
     }
   } catch (error) {
     console.warn('Falha ao buscar medições remotas, usando local:', error);
   }
 
-  return local;
+  return retrofitMeasurementClientNames(local);
 }
 
 export async function updateMeasurementPdf(id: string, pdfUri: string) {

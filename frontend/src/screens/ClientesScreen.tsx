@@ -54,7 +54,7 @@ export default function ClientesScreen({ navigation }: Props) {
         />
         
         <View style={{ height: 16 }} />
-        <Button title="+ Nova Barbearia" onPress={() => navigation.navigate('CadastrarCliente')} variant="secondary" />
+        <Button title="Nova Barbearia" onPress={() => navigation.navigate('CadastrarCliente')} variant="secondary" />
         
         <View style={{ height: 16 }} />
         

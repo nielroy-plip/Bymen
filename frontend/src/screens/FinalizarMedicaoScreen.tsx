@@ -252,6 +252,7 @@ export default function FinalizarMedicaoScreen({ navigation, route }: Props) {
       const measurement: Measurement = {
         id: medicaoId,
         clientId,
+        clientName: client.nome,
         dateTime,
         medicaoRows,
         valorMedicao,

@@ -83,7 +83,7 @@ export default function BancadaRowComponent({ product, onChange, hideValues = fa
         </Text>
         {!hideValues && (
           <Text style={{ fontSize: fontSize.small, color: '#991B1B', marginTop: 2, fontWeight: '600' }}>
-            Valor unitário: {formatCurrency(product.preco).replace('.', ',')}
+            Valor unitário: {formatCurrency(product.preco).replace(/R\$\s*/g, 'R$').replace('.', ',')}
           </Text>
         )}
       </View>
@@ -91,7 +91,7 @@ export default function BancadaRowComponent({ product, onChange, hideValues = fa
       {/* Input de Quantidade */}
       <View>
         <Text style={{ fontSize: fontSize.small, color: '#6B7280', marginBottom: 4 }}>
-          Quantidade Comprada/Usada
+          Quantidade
         </Text>
         <Input
           placeholder="0"

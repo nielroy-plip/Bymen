@@ -451,11 +451,11 @@ export async function generateEstoquePDF({ estoque, bancada, signatureDataUrl }:
   <html>
     <head>
       <meta charset="utf-8" />
-      <title>Reposição Extra</title>
+      <title>Estoque incial</title>
     </head>
     <body style="font-family: Arial, sans-serif; color:#111827;">
       <div style="padding:24px">
-        <h1 style="margin:0 0 8px 0;">Reposição Extra</h1>
+        <h1 style="margin:0 0 8px 0;text-align:center;">Estoque incial</h1>
         ${produtosSection}
         ${bancadaSection}
       </div>

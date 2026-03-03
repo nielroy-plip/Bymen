@@ -12,6 +12,7 @@ export default function DashboardScreen({ navigation }: Props) {
   const [measurements, setMeasurements] = useState<Measurement[]>([]);
   const [syncPending, setSyncPending] = useState<SyncPendingItem[]>([]);
   const [criticalStockCount, setCriticalStockCount] = useState(0);
+  const [criticalStockItems, setCriticalStockItems] = useState<Array<{ id: string; nome: string; estoque: number }>>([]);
 
   useEffect(() => {
     async function loadData() {
@@ -22,7 +23,12 @@ export default function DashboardScreen({ navigation }: Props) {
       ]);
       setMeasurements(ms);
       setSyncPending(pendings);
-      setCriticalStockCount(products.filter((p: any) => (p.estoque ?? 0) <= 10).length);
+      const critical = products
+        .filter((p: any) => (p.estoque ?? 0) <= 10)
+        .map((p: any) => ({ id: p.id, nome: p.nome, estoque: p.estoque ?? 0 }))
+        .sort((a: any, b: any) => a.estoque - b.estoque);
+      setCriticalStockCount(critical.length);
+      setCriticalStockItems(critical);
     }
 
     loadData();
@@ -41,10 +47,14 @@ export default function DashboardScreen({ navigation }: Props) {
     });
 
     const totalValue = monthMeasurements.reduce((acc, item) => acc + (item.totalGeral || 0), 0);
+    const totalMedicao = monthMeasurements.reduce((acc, item) => acc + (item.valorMedicao || 0), 0);
+    const totalBancada = monthMeasurements.reduce((acc, item) => acc + (item.valorBancada || 0), 0);
 
     return {
       monthCount: monthMeasurements.length,
       monthTotal: totalValue,
+      monthTotalMedicao: totalMedicao,
+      monthTotalBancada: totalBancada,
       pendingSync: syncPending.length,
       criticalStock: criticalStockCount,
     };
@@ -100,8 +110,14 @@ export default function DashboardScreen({ navigation }: Props) {
           </View>
           <View style={{ width: '48%', backgroundColor: '#F0FDF4', borderColor: '#DCFCE7', borderWidth: 1, borderRadius: 12, padding: 10, marginBottom: 10 }}>
             <Text style={{ color: '#166534', fontSize: 12, fontWeight: '600' }}>Valor do mês</Text>
-            <Text style={{ color: '#111827', fontSize: 16, fontWeight: '700', marginTop: 4 }}>
-              R$ {kpis.monthTotal.toFixed(2).replace('.', ',')}
+            <Text style={{ color: '#111827', fontSize: 14, fontWeight: '700', marginTop: 4 }}>
+              Total: R${kpis.monthTotal.toFixed(2).replace('.', ',')}
+            </Text>
+            <Text style={{ color: '#1E40AF', fontSize: 12, fontWeight: '600', marginTop: 2 }}>
+              Medição: R${kpis.monthTotalMedicao.toFixed(2).replace('.', ',')}
+            </Text>
+            <Text style={{ color: '#991B1B', fontSize: 12, fontWeight: '600', marginTop: 2 }}>
+              Bancada: R${kpis.monthTotalBancada.toFixed(2).replace('.', ',')}
             </Text>
           </View>
           <View style={{ width: '48%', backgroundColor: '#FEF2F2', borderColor: '#FEE2E2', borderWidth: 1, borderRadius: 12, padding: 10, marginBottom: 10 }}>
@@ -111,6 +127,16 @@ export default function DashboardScreen({ navigation }: Props) {
           <View style={{ width: '48%', backgroundColor: '#FFFBEB', borderColor: '#FEF3C7', borderWidth: 1, borderRadius: 12, padding: 10, marginBottom: 10 }}>
             <Text style={{ color: '#92400E', fontSize: 12, fontWeight: '600' }}>Estoque crítico</Text>
             <Text style={{ color: '#111827', fontSize: 20, fontWeight: '700', marginTop: 4 }}>{kpis.criticalStock}</Text>
+            {criticalStockItems.slice(0, 3).map((item) => (
+              <Text key={item.id} style={{ color: '#92400E', fontSize: 11, marginTop: 2 }} numberOfLines={1}>
+                • {item.nome} ({item.estoque})
+              </Text>
+            ))}
+            {criticalStockItems.length > 3 && (
+              <Text style={{ color: '#92400E', fontSize: 11, marginTop: 2 }}>
+                +{criticalStockItems.length - 3} produtos
+              </Text>
+            )}
           </View>
         </View>
 
