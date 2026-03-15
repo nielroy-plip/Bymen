@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { Alert, ScrollView, Text, TouchableOpacity, View, KeyboardAvoidingView, Platform, Keyboard, TouchableWithoutFeedback } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { Alert, ScrollView, Text, TouchableOpacity, View, KeyboardAvoidingView, Platform, Keyboard, TouchableWithoutFeedback, NativeSyntheticEvent, TextInputFocusEventData } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../routes';
@@ -20,6 +20,7 @@ type UserSettings = {
 const USER_SETTINGS_KEY = 'bymen_user_settings';
 
 export default function ConfiguracoesUsuarioScreen({ navigation }: Props) {
+  const scrollRef = useRef<ScrollView>(null);
   const [nome, setNome] = useState('');
   const [email, setEmail] = useState('');
   const [telefone, setTelefone] = useState('');
@@ -28,6 +29,13 @@ export default function ConfiguracoesUsuarioScreen({ navigation }: Props) {
   const [confirmarSenha, setConfirmarSenha] = useState('');
   const [receberNotificacoes, setReceberNotificacoes] = useState(true);
   const [loading, setLoading] = useState(false);
+
+  function handleFieldFocus(event: NativeSyntheticEvent<TextInputFocusEventData>) {
+    const target = event.nativeEvent.target;
+    setTimeout(() => {
+      (scrollRef.current as any)?.scrollResponderScrollNativeHandleToKeyboard(target, 120, true);
+    }, 40);
+  }
 
   useEffect(() => {
     async function loadSettings() {
@@ -123,7 +131,12 @@ export default function ConfiguracoesUsuarioScreen({ navigation }: Props) {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 72 : 0}
       >
-      <ScrollView contentContainerStyle={{ padding: 24 }} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
+      <ScrollView
+        ref={scrollRef}
+        contentContainerStyle={{ padding: 24, paddingBottom: 120 }}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+      >
         <Text style={{ fontSize: 24, fontWeight: '700', color: '#111827', marginBottom: 8 }}>
           Configuração do Usuário
         </Text>
@@ -135,6 +148,7 @@ export default function ConfiguracoesUsuarioScreen({ navigation }: Props) {
           label="Usuário"
           value={nome}
           onChangeText={setNome}
+          onFocus={handleFieldFocus}
           placeholder="Nome do usuário"
         />
 
@@ -142,6 +156,7 @@ export default function ConfiguracoesUsuarioScreen({ navigation }: Props) {
           label="E-mail"
           value={email}
           onChangeText={setEmail}
+          onFocus={handleFieldFocus}
           placeholder="email@empresa.com"
           keyboardType="email-address"
         />
@@ -150,6 +165,7 @@ export default function ConfiguracoesUsuarioScreen({ navigation }: Props) {
           label="Telefone"
           value={telefone}
           onChangeText={setTelefone}
+          onFocus={handleFieldFocus}
           placeholder="(11) 99999-9999"
           keyboardType="phone-pad"
         />
@@ -162,6 +178,7 @@ export default function ConfiguracoesUsuarioScreen({ navigation }: Props) {
           label="Senha atual"
           value={senhaAtual}
           onChangeText={setSenhaAtual}
+          onFocus={handleFieldFocus}
           placeholder="Digite a senha atual"
         />
 
@@ -169,6 +186,7 @@ export default function ConfiguracoesUsuarioScreen({ navigation }: Props) {
           label="Nova senha"
           value={novaSenha}
           onChangeText={setNovaSenha}
+          onFocus={handleFieldFocus}
           placeholder="Digite a nova senha"
         />
 
@@ -176,6 +194,7 @@ export default function ConfiguracoesUsuarioScreen({ navigation }: Props) {
           label="Confirmar nova senha"
           value={confirmarSenha}
           onChangeText={setConfirmarSenha}
+          onFocus={handleFieldFocus}
           placeholder="Confirme a nova senha"
         />
 

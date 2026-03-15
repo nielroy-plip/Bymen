@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import * as Sharing from 'expo-sharing';
-import { View, Text, ScrollView, Alert, Pressable, Platform, KeyboardAvoidingView, Keyboard, TouchableWithoutFeedback } from 'react-native';
+import { View, Text, ScrollView, Alert, Pressable, Platform, KeyboardAvoidingView, Keyboard, TouchableWithoutFeedback, NativeSyntheticEvent, TextInputFocusEventData } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../routes';
 import Card from '../components/Card';
@@ -17,6 +17,7 @@ import { getProductUnit } from '../utils/product';
 type Props = NativeStackScreenProps<RootStackParamList, 'NovoEstoque'>;
 
   const NovoEstoqueScreen: React.FC<Props> = ({ navigation, route }) => {
+    const scrollRef = useRef<ScrollView>(null);
     const [activeTab, setActiveTab] = useState<'produtos' | 'bancada'>('produtos');
     // Estado para produtos normais (estoque inicial, não cobrados)
     const [estoque, setEstoque] = useState<Record<string, string>>({});
@@ -31,6 +32,13 @@ type Props = NativeStackScreenProps<RootStackParamList, 'NovoEstoque'>;
     const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
     const [clientSaved, setClientSaved] = useState(false);
     const requiresSignature = Platform.OS !== 'web';
+
+    function handleFieldFocus(event: NativeSyntheticEvent<TextInputFocusEventData>) {
+      const target = event.nativeEvent.target;
+      setTimeout(() => {
+        (scrollRef.current as any)?.scrollResponderScrollNativeHandleToKeyboard(target, 120, true);
+      }, 40);
+    }
   
     function handleChangeEstoque(id: string, value: string) {
       setEstoque(prev => ({ ...prev, [id]: value }));
@@ -178,6 +186,7 @@ type Props = NativeStackScreenProps<RootStackParamList, 'NovoEstoque'>;
           signatureDataUrl,
           clientName: draftClientName,
           dateTime: dateOnly,
+          filePrefix: 'EstoqueInicial',
         });
         setPdfUri(uri);
 
@@ -260,7 +269,12 @@ type Props = NativeStackScreenProps<RootStackParamList, 'NovoEstoque'>;
             <Text style={{ fontWeight: '700', color: activeTab === 'bancada' ? '#FFFFFF' : '#6B7280' }}>Bancada</Text>
           </Pressable>
         </View>
-        <ScrollView contentContainerStyle={{ padding: 24 }} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
+        <ScrollView
+          ref={scrollRef}
+          contentContainerStyle={{ padding: 24, paddingBottom: 140 }}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+        >
           <Text style={{ fontSize: 26, fontWeight: '700', color: '#111827', marginBottom: 16 }}>Novo Estoque Inicial</Text>
           {activeTab === 'produtos' && (
             <>
@@ -275,6 +289,7 @@ type Props = NativeStackScreenProps<RootStackParamList, 'NovoEstoque'>;
                       label="Quantidade Inicial"
                       value={estoque[p.id] || ''}
                       onChangeText={v => handleChangeEstoque(p.id, v)}
+                      onFocus={handleFieldFocus}
                       placeholder="0"
                       keyboardType="numeric"
                     />
@@ -297,6 +312,7 @@ type Props = NativeStackScreenProps<RootStackParamList, 'NovoEstoque'>;
                       label="Quantidade Inicial"
                       value={bancada[p.id] || ''}
                       onChangeText={v => handleChangeBancada(p.id, v)}
+                      onFocus={handleFieldFocus}
                       placeholder="0"
                       keyboardType="numeric"
                     />

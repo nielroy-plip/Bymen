@@ -390,6 +390,18 @@ export async function saveClient(client: Client) {
   };
 
   const all = await readClients();
+  const normalizedIncomingDoc = String(client.cnpjCpf || '').replace(/\D/g, '');
+  const duplicate = all.find((c) => {
+    const normalizedExistingDoc = String(c.cnpjCpf || '').replace(/\D/g, '');
+    const sameDocument = normalizedExistingDoc.length > 0 && normalizedExistingDoc === normalizedIncomingDoc;
+    const differentClient = c.id !== client.id;
+    return sameDocument && differentClient;
+  });
+
+  if (duplicate) {
+    throw new Error('Já existe uma barbearia cadastrada com este CNPJ/CPF.');
+  }
+
   const existing = all.find(c => c.id === client.id);
   if (existing) {
     const updated = all.map(c => c.id === client.id ? client : c);

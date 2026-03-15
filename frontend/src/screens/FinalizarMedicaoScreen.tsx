@@ -1,5 +1,5 @@
-import React, { useMemo, useState, useEffect } from 'react';
-import { View, Text, ScrollView, TextInput, Alert, KeyboardAvoidingView, Platform, Keyboard, TouchableWithoutFeedback } from 'react-native';
+import React, { useMemo, useState, useEffect, useRef } from 'react';
+import { View, Text, ScrollView, TextInput, Alert, KeyboardAvoidingView, Platform, Keyboard, TouchableWithoutFeedback, NativeSyntheticEvent, TextInputFocusEventData } from 'react-native';
 import { TouchableOpacity } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../routes';
@@ -32,6 +32,7 @@ const ENABLE_BLING_SYNC = String(process.env.EXPO_PUBLIC_ENABLE_BLING || '').toL
 type Props = NativeStackScreenProps<RootStackParamList, 'FinalizarMedicao'>;
 
 export default function FinalizarMedicaoScreen({ navigation, route }: Props) {
+  const scrollRef = useRef<ScrollView>(null);
   const params = route.params as any;
   const {
     clientId,
@@ -393,6 +394,14 @@ export default function FinalizarMedicaoScreen({ navigation, route }: Props) {
 
   // Calcula desconto PIX (5%)
   const valorMedicaoPix = pagamentoPix ? valorMedicao * 0.95 : valorMedicao;
+
+  function handleFieldFocus(event: NativeSyntheticEvent<TextInputFocusEventData>) {
+    const target = event.nativeEvent.target;
+    setTimeout(() => {
+      (scrollRef.current as any)?.scrollResponderScrollNativeHandleToKeyboard(target, 120, true);
+    }, 40);
+  }
+
   return (
     <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
       <KeyboardAvoidingView
@@ -400,7 +409,12 @@ export default function FinalizarMedicaoScreen({ navigation, route }: Props) {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 72 : 0}
       >
-      <ScrollView contentContainerStyle={{ padding }} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
+      <ScrollView
+        ref={scrollRef}
+        contentContainerStyle={{ padding, paddingBottom: 140 }}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+      >
         <OperationContextHeader
           title="Resumo da Medição"
           subtitle={`${client.nome} • ${dateTime}`}
@@ -603,6 +617,7 @@ export default function FinalizarMedicaoScreen({ navigation, route }: Props) {
             placeholder="Nome do responsável"
             value={responsavel}
             onChangeText={setResponsavel}
+            onFocus={handleFieldFocus}
           />
             <Text style={{ fontSize: fontSize.base, color: '#111827', fontWeight: '600', marginTop: isTablet ? 12 : 8, marginBottom: isTablet ? 8 : 6 }}>
               Observações
@@ -621,6 +636,7 @@ export default function FinalizarMedicaoScreen({ navigation, route }: Props) {
               multiline
               value={observacoes}
               onChangeText={setObservacoes}
+              onFocus={handleFieldFocus}
             />
         </View>
 

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Text, TextInput, View, TouchableOpacity } from 'react-native';
+import { Text, TextInput, View, TouchableOpacity, TextInputProps } from 'react-native';
 import { useResponsive } from '../hooks/useResponsive';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -7,10 +7,9 @@ type Props = {
   label?: string;
   value: string;
   onChangeText: (text: string) => void;
-  placeholder?: string;
   style?: any;
   inputContainerStyle?: any;
-};
+} & TextInputProps;
 
 export default function PasswordInput({
   label = 'Senha',
@@ -19,6 +18,7 @@ export default function PasswordInput({
   placeholder = 'senha',
   style,
   inputContainerStyle,
+  ...rest
 }: Props) {
   const { isTablet, fontSize } = useResponsive();
   const [isVisible, setIsVisible] = useState(false);
@@ -53,6 +53,7 @@ export default function PasswordInput({
           placeholder={placeholder}
           placeholderTextColor="#9CA3AF"
           secureTextEntry={!isVisible}
+          {...rest}
           style={{
             flex: 1,
             fontSize: isTablet ? 22 : 20,

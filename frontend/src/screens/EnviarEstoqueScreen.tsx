@@ -101,6 +101,7 @@ export default function EnviarEstoqueScreen({ navigation, route }: Props) {
         bancada,
         clientName: client?.nome || 'Barbearia',
         dateTime,
+        filePrefix: 'EstoqueExtra',
       });
       setPdfUri(uri);
       Alert.alert('Sucesso', 'PDF gerado com sucesso!');

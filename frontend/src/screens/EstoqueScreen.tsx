@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text, ScrollView, Alert, Pressable, KeyboardAvoidingView, Platform, Keyboard, TouchableWithoutFeedback } from 'react-native';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { View, Text, ScrollView, Alert, Pressable, KeyboardAvoidingView, Platform, Keyboard, TouchableWithoutFeedback, NativeSyntheticEvent, TextInputFocusEventData } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
 import { RootStackParamList } from '../routes';
@@ -17,6 +17,7 @@ import { getProductUnit } from '../utils/product';
 type Props = NativeStackScreenProps<RootStackParamList, 'Estoque'>;
 
 export default function EstoqueScreen({}: Props) {
+  const scrollRef = useRef<ScrollView>(null);
   const [products, setProducts] = useState<Product[]>([]);
   const [quantities, setQuantities] = useState<Record<string, string>>({});
   const [activeTab, setActiveTab] = useState<'produtos' | 'bancada'>('produtos');
@@ -39,6 +40,13 @@ export default function EstoqueScreen({}: Props) {
     () => criticalItems.filter((item) => item.id.startsWith('b')),
     [criticalItems]
   );
+
+  function handleFieldFocus(event: NativeSyntheticEvent<TextInputFocusEventData>) {
+    const target = event.nativeEvent.target;
+    setTimeout(() => {
+      (scrollRef.current as any)?.scrollResponderScrollNativeHandleToKeyboard(target, 120, true);
+    }, 40);
+  }
 
   // Funções para movimentação de estoque de bancada
   async function handleBancadaEntry(productId: string) {
@@ -176,7 +184,12 @@ export default function EstoqueScreen({}: Props) {
           <Text style={{ fontWeight: '700', color: activeTab === 'bancada' ? '#FFFFFF' : '#6B7280' }}>Bancada</Text>
         </Pressable>
       </View>
-      <ScrollView contentContainerStyle={{ padding: 24 }} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
+      <ScrollView
+        ref={scrollRef}
+        contentContainerStyle={{ padding: 24, paddingBottom: 140 }}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+      >
         <Text style={{ fontSize: 24, fontWeight: '700', color: '#111827', marginBottom: 16 }}>Estoque</Text>
 
         <Card>
@@ -235,6 +248,7 @@ export default function EstoqueScreen({}: Props) {
                     label="Quantidade"
                     value={quantities[p.id] || ''}
                     onChangeText={(text) => setQuantities(prev => ({ ...prev, [p.id]: text }))}
+                    onFocus={handleFieldFocus}
                     placeholder="0"
                     keyboardType="numeric"
                   />
@@ -260,6 +274,7 @@ export default function EstoqueScreen({}: Props) {
                     label="Quantidade"
                     value={bancadaQuantities[p.id] || ''}
                     onChangeText={(text) => setBancadaQuantities(prev => ({ ...prev, [p.id]: text }))}
+                    onFocus={handleFieldFocus}
                     placeholder="0"
                     keyboardType="numeric"
                   />

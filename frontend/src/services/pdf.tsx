@@ -33,7 +33,7 @@ async function saveNamedPdf(html: string, filePrefix: string, clientName: string
   const safeClient = toSafeFilePart(clientName) || 'Barbearia';
   const safeDate = toDateOnly(dateTime);
   const fileName = `${toSafeFilePart(filePrefix)}_${safeClient}_${safeDate}.pdf`;
-  const baseDir = FileSystem.documentDirectory || FileSystem.cacheDirectory;
+  const baseDir = FileSystem.Paths.document?.uri || FileSystem.Paths.cache?.uri;
   if (!baseDir) return uri;
   const targetUri = `${baseDir}${fileName}`;
 
@@ -381,12 +381,14 @@ export async function generateEstoquePDF({
   signatureDataUrl,
   clientName,
   dateTime,
+  filePrefix,
 }: {
   estoque: Record<string, string>,
   bancada: Record<string, string>,
   signatureDataUrl?: string,
   clientName?: string,
   dateTime?: string,
+  filePrefix?: string,
 }): Promise<string> {
   const hasProdutos = PRODUCTS.some((p: any) => parseInt(estoque[p.id] || '0', 10) > 0);
   const hasBancada = PRODUTOS_BANCADA.some((p: any) => parseInt(bancada[p.id] || '0', 10) > 0);
@@ -401,10 +403,10 @@ export async function generateEstoquePDF({
       `<tr>
         <td style='padding:8px;border:1px solid #3B82F6;'>${p.nome}</td>
         <td style='padding:8px;border:1px solid #3B82F6;'>${p.linha}</td>
-        <td style='padding:8px;border:1px solid #3B82F6;'>${p.cap}${getProductUnit(p.nome)}</td>
-        <td style='padding:8px;border:1px solid #3B82F6;'>${estoque[p.id]}</td>
-        <td style='padding:8px;border:1px solid #3B82F6;'>R${p.preco.toFixed(2).replace('.',',')}</td>
-        <td style='padding:8px;border:1px solid #3B82F6;'>R${p.precoSugestao ? p.precoSugestao.toFixed(2).replace('.',',') : '-'}</td>
+        <td style='padding:8px;border:1px solid #3B82F6;text-align:center;'>${p.cap}${getProductUnit(p.nome)}</td>
+        <td style='padding:8px;border:1px solid #3B82F6;text-align:center;'>${estoque[p.id]}</td>
+        <td style='padding:8px;border:1px solid #3B82F6;text-align:right;'>R${p.preco.toFixed(2).replace('.',',')}</td>
+        <td style='padding:8px;border:1px solid #3B82F6;text-align:right;'>R${p.precoSugestao ? p.precoSugestao.toFixed(2).replace('.',',') : '-'}</td>
       </tr>`
     ).join('');
   const produtosSection = produtosRowsHTML ? `
@@ -433,7 +435,7 @@ export async function generateEstoquePDF({
     .map((p: any) => {
       const qtd = parseInt(bancada[p.id]||'0');
       const total = qtd * p.preco;
-      return `<tr><td style='padding:8px;border:1px solid #DC2626;'>${p.nome}</td><td style='padding:8px;border:1px solid #DC2626;'>${p.linha}</td><td style='padding:8px;border:1px solid #DC2626;'>${p.cap}${getProductUnit(p.nome)}</td><td style='padding:8px;border:1px solid #DC2626;'>${qtd}</td><td style='padding:8px;border:1px solid #DC2626;'>R${p.preco.toFixed(2).replace('.',',')}</td><td style='padding:8px;border:1px solid #DC2626;'>R${total.toFixed(2).replace('.',',')}</td></tr>`;
+      return `<tr><td style='padding:8px;border:1px solid #DC2626;'>${p.nome}</td><td style='padding:8px;border:1px solid #DC2626;'>${p.linha}</td><td style='padding:8px;border:1px solid #DC2626;text-align:center;'>${p.cap}${getProductUnit(p.nome)}</td><td style='padding:8px;border:1px solid #DC2626;text-align:center;'>${qtd}</td><td style='padding:8px;border:1px solid #DC2626;text-align:right;'>R${p.preco.toFixed(2).replace('.',',')}</td><td style='padding:8px;border:1px solid #DC2626;text-align:right;'>R${total.toFixed(2).replace('.',',')}</td></tr>`;
     }).join('');
   const bancadaSection = bancadaRowsHTML ? `
       <div style="margin-top:32px;padding:16px;background:#FEF2F2;border:2px solid #DC2626;border-radius:8px">
@@ -477,5 +479,5 @@ export async function generateEstoquePDF({
     </body>
   </html>
   `;
-  return saveNamedPdf(html, 'EstoqueInicial', clientName || 'Barbearia', dateTime || '');
+  return saveNamedPdf(html, filePrefix || 'EstoqueInicial', clientName || 'Barbearia', dateTime || '');
 }

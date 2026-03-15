@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, ScrollView, Alert, KeyboardAvoidingView, Platform, Keyboard, TouchableWithoutFeedback } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { View, Text, ScrollView, Alert, KeyboardAvoidingView, Platform, Keyboard, TouchableWithoutFeedback, NativeSyntheticEvent, TextInputFocusEventData } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../routes';
 import Input from '../components/Input';
@@ -10,6 +10,7 @@ import { useResponsive } from '../hooks/useResponsive';
 type Props = NativeStackScreenProps<RootStackParamList, 'CadastrarCliente'>;
 
 export default function CadastrarClienteScreen({ navigation, route }: Props) {
+  const scrollRef = useRef<ScrollView>(null);
   const clientId = route.params?.clientId;
   const [nome, setNome] = useState('');
   const [cnpjCpf, setCnpjCpf] = useState('');
@@ -40,6 +41,24 @@ export default function CadastrarClienteScreen({ navigation, route }: Props) {
 
   function normalizePhoneInput(value: string) {
     return value.replace(/\D/g, '').slice(0, 11);
+  }
+
+  function formatDocument(value: string) {
+    const digits = value.replace(/\D/g, '');
+    if (digits.length === 11) {
+      return digits.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
+    }
+    if (digits.length === 14) {
+      return digits.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, '$1.$2.$3/$4-$5');
+    }
+    return value;
+  }
+
+  function handleFieldFocus(event: NativeSyntheticEvent<TextInputFocusEventData>) {
+    const target = event.nativeEvent.target;
+    setTimeout(() => {
+      (scrollRef.current as any)?.scrollResponderScrollNativeHandleToKeyboard(target, 120, true);
+    }, 40);
   }
 
   const nomeOk = nome.trim().length >= 2;
@@ -78,6 +97,23 @@ export default function CadastrarClienteScreen({ navigation, route }: Props) {
       return;
     }
 
+    const allClients = await listClients();
+    const duplicate = allClients.find((c) => {
+      const existingDoc = String(c.cnpjCpf || '').replace(/\D/g, '');
+      const sameDocument = existingDoc.length > 0 && existingDoc === docDigits;
+      const differentClient = c.id !== clientId;
+      return sameDocument && differentClient;
+    });
+
+    if (duplicate) {
+      const formattedDoc = formatDocument(docDigits);
+      Alert.alert(
+        'CNPJ/CPF já cadastrado',
+        `Já existe uma barbearia com este CNPJ/CPF (${formattedDoc}): ${duplicate.nome}.\n\nUse outro documento ou edite o cadastro existente.`,
+      );
+      return;
+    }
+
     const id = clientId || `c-${Date.now()}`;
     const client = {
       id,
@@ -108,12 +144,18 @@ export default function CadastrarClienteScreen({ navigation, route }: Props) {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 72 : 0}
       >
-        <ScrollView contentContainerStyle={{ padding }} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
+        <ScrollView
+          ref={scrollRef}
+          contentContainerStyle={{ padding, paddingBottom: 120 }}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+        >
 
         <Input
           label="Nome da Barbearia *"
           value={nome}
           onChangeText={setNome}
+          onFocus={handleFieldFocus}
           placeholder="Ex: Barbearia Elite"
         />
 
@@ -121,6 +163,7 @@ export default function CadastrarClienteScreen({ navigation, route }: Props) {
           label="CNPJ / CPF *"
           value={cnpjCpf}
           onChangeText={(value) => setCnpjCpf(normalizeDocumentInput(value))}
+          onFocus={handleFieldFocus}
           placeholder="00.000.000/0000-00"
           keyboardType="numeric"
           maxLength={14}
@@ -130,6 +173,7 @@ export default function CadastrarClienteScreen({ navigation, route }: Props) {
           label="Endereço *"
           value={endereco}
           onChangeText={setEndereco}
+          onFocus={handleFieldFocus}
           placeholder="Rua, número, bairro, cidade"
         />
 
@@ -137,6 +181,7 @@ export default function CadastrarClienteScreen({ navigation, route }: Props) {
           label="Responsável *"
           value={responsavel}
           onChangeText={setResponsavel}
+          onFocus={handleFieldFocus}
           placeholder="Nome do responsável"
         />
 
@@ -144,6 +189,7 @@ export default function CadastrarClienteScreen({ navigation, route }: Props) {
           label="Telefone *"
           value={telefone}
           onChangeText={(value) => setTelefone(normalizePhoneInput(value))}
+          onFocus={handleFieldFocus}
           placeholder="+55 11 99999-9999"
           keyboardType="phone-pad"
           maxLength={11}

@@ -170,23 +170,15 @@ export class HomologService {
     };
 
     const existingById = await this.prisma.client.findUnique({ where: { id: dto.id } });
+    const existingByHash = await this.prisma.client.findUnique({ where: { documentHash } });
+
+    if (existingByHash && existingByHash.id !== dto.id) {
+      throw new ConflictException('Já existe uma barbearia cadastrada com este CNPJ/CPF');
+    }
 
     if (existingById) {
       return this.prisma.client.update({
         where: { id: dto.id },
-        data: {
-          name: dto.nome,
-          phone: dto.telefone,
-          documentEnc: JSON.stringify(payload),
-          documentHash,
-        },
-      });
-    }
-
-    const existingByHash = await this.prisma.client.findUnique({ where: { documentHash } });
-    if (existingByHash) {
-      return this.prisma.client.update({
-        where: { id: existingByHash.id },
         data: {
           name: dto.nome,
           phone: dto.telefone,

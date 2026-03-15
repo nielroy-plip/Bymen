@@ -1,0 +1,37 @@
+# Dependencias
+frontend/node_modules/
+backend/node_modules/
+
+# Builds e caches
+frontend/.expo/
+frontend/dist/
+frontend/web-build/
+backend/coverage/
+backend/*.tsbuildinfo
+
+# Expo/EAS local
+.expo/
+
+# Ambientes locais e segredos
+.env
+.env.*
+frontend/.env
+frontend/.env.*
+backend/.env
+backend/.env.*
+
+# Editores e IDEs
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/launch.json
+!.vscode/tasks.json
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+
+# Sistema operacional
+.DS_Store
+Thumbs.db

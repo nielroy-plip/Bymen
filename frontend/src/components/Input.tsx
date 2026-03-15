@@ -6,13 +6,10 @@ type Props = {
   label?: string;
   value: string;
   onChangeText: (text: string) => void;
-  keyboardType?: TextInputProps['keyboardType'];
-  placeholder?: string;
   style?: any;
-  maxLength?: number;
-};
+} & TextInputProps;
 
-export default function Input({ label, value, onChangeText, keyboardType, placeholder, style, maxLength }: Props) {
+export default function Input({ label, value, onChangeText, style, ...rest }: Props) {
   const { isTablet, inputHeight, fontSize } = useResponsive();
   const bigInputHeight = isTablet ? 72 : 60;
   const bigFontSize = isTablet ? 22 : 20;
@@ -23,9 +20,7 @@ export default function Input({ label, value, onChangeText, keyboardType, placeh
       <TextInput
         value={value}
         onChangeText={onChangeText}
-        keyboardType={keyboardType}
-        placeholder={placeholder}
-        maxLength={maxLength}
+        {...rest}
         style={{
           borderWidth: 1,
           borderColor: '#E5E7EB',
