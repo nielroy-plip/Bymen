@@ -1,9 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text, ScrollView, Modal, TouchableOpacity, ActivityIndicator, useWindowDimensions } from 'react-native';
+import { View, Text, ScrollView, Modal, TouchableOpacity, ActivityIndicator, useWindowDimensions, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { BarChart } from 'react-native-chart-kit';
-import { listClients, listMeasurements, listProducts, Measurement } from '../services/api';
+import { listClients, listMeasurements, listProducts, listSales, Measurement, Sale } from '../services/api';
 import { Client } from '../data/clients';
+import { generateReportChartPDF } from '../services/pdf';
+import { sharePdf } from '../services/whatsapp';
+import { formatCurrency } from '../utils/format';
 
 const monthNames = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 
@@ -36,6 +39,7 @@ export default function RelatoriosScreen() {
   const isSmallScreen = screenWidth < 400;
   const [barbearias, setBarbearias] = useState<Client[]>([]);
   const [measurements, setMeasurements] = useState<Measurement[]>([]);
+  const [sales, setSales] = useState<Sale[]>([]);
   const [products, setProducts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [barbeariaId, setBarbeariaId] = useState<string>('');
@@ -50,14 +54,16 @@ export default function RelatoriosScreen() {
   useEffect(() => {
     async function loadData() {
       setLoading(true);
-      const [clientsData, measurementsData, productsData] = await Promise.all([
+      const [clientsData, measurementsData, salesData, productsData] = await Promise.all([
         listClients(),
         listMeasurements(),
+        listSales(),
         listProducts(),
       ]);
 
       setBarbearias(clientsData);
       setMeasurements(measurementsData);
+      setSales(salesData);
       setProducts(productsData);
 
       if (!barbeariaId && clientsData.length > 0) {
@@ -75,15 +81,42 @@ export default function RelatoriosScreen() {
     { label: 'Últimos 3 meses', value: '3m' },
   ];
 
+  const selectedBarbearia = useMemo(
+    () => barbearias.find((b) => b.id === barbeariaId),
+    [barbearias, barbeariaId],
+  );
+
+  const isVendaClient = selectedBarbearia?.operationMode === 'VENDA';
+
   const produtosFiltroMedicao = useMemo(() => {
-    const names = Array.from(new Set(products.filter((p: any) => !String(p.id || '').startsWith('b')).map((p) => p.nome)));
+    const names = isVendaClient
+      ? Array.from(
+          new Set(
+            sales
+              .filter((s) => (barbeariaId ? s.clientId === barbeariaId : true))
+              .flatMap((s) => s.items || [])
+              .filter((item: any) => !String(item.id || '').startsWith('b'))
+              .map((item: any) => item.nome),
+          ),
+        )
+      : Array.from(new Set(products.filter((p: any) => !String(p.id || '').startsWith('b')).map((p) => p.nome)));
     return ['Todos', ...names];
-  }, [products]);
+  }, [isVendaClient, sales, barbeariaId, products]);
 
   const produtosFiltroBancada = useMemo(() => {
-    const names = Array.from(new Set(products.filter((p: any) => String(p.id || '').startsWith('b')).map((p) => p.nome)));
+    const names = isVendaClient
+      ? Array.from(
+          new Set(
+            sales
+              .filter((s) => (barbeariaId ? s.clientId === barbeariaId : true))
+              .flatMap((s) => s.items || [])
+              .filter((item: any) => String(item.id || '').startsWith('b'))
+              .map((item: any) => item.nome),
+          ),
+        )
+      : Array.from(new Set(products.filter((p: any) => String(p.id || '').startsWith('b')).map((p) => p.nome)));
     return ['Todos', ...names];
-  }, [products]);
+  }, [isVendaClient, sales, barbeariaId, products]);
 
   const monthWindow = useMemo(() => {
     const count = periodo === '12m' ? 12 : periodo === '6m' ? 6 : 3;
@@ -100,6 +133,7 @@ export default function RelatoriosScreen() {
 
   const salesData = useMemo(() => {
     const source = measurements.filter((m) => (barbeariaId ? m.clientId === barbeariaId : true));
+    const sourceSales = sales.filter((s) => (barbeariaId ? s.clientId === barbeariaId : true));
     const mapByMonth: Record<string, number> = {};
 
     source.forEach((m) => {
@@ -109,6 +143,13 @@ export default function RelatoriosScreen() {
       mapByMonth[key] = (mapByMonth[key] || 0) + Number(m.totalGeral || 0);
     });
 
+    sourceSales.forEach((s) => {
+      const parsed = parseMeasurementDate(s.dateTime);
+      if (!parsed) return;
+      const key = getMonthKey(parsed);
+      mapByMonth[key] = (mapByMonth[key] || 0) + Number(s.total || 0);
+    });
+
     const labels = monthWindow.map((m) => m.label);
     const data = monthWindow.map((m) => Number((mapByMonth[m.key] || 0).toFixed(2)));
 
@@ -116,7 +157,7 @@ export default function RelatoriosScreen() {
       labels,
       data,
     };
-  }, [measurements, barbeariaId, monthWindow]);
+  }, [measurements, sales, barbeariaId, monthWindow]);
 
   const filteredMeasurementsInPeriod = useMemo(() => {
     const validMonthKeys = new Set(monthWindow.map((m) => m.key));
@@ -202,7 +243,101 @@ export default function RelatoriosScreen() {
     }));
   }, [filteredMeasurementsInPeriod, produtoFiltroBancada]);
 
+  const vendasProdutosData = useMemo(() => {
+    const grouped = new Map<string, { label: string; linha: string; total: number }>();
+
+    sales
+      .filter((s) => (barbeariaId ? s.clientId === barbeariaId : true))
+      .forEach((s) => {
+        const parsed = parseMeasurementDate(s.dateTime);
+        if (!parsed) return;
+        if (!new Set(monthWindow.map((m) => m.key)).has(getMonthKey(parsed))) return;
+
+        (s.items || []).forEach((item: any) => {
+          if (String(item.id || '').startsWith('b')) return;
+          const key = `${item.id || item.nome}-${item.linha || ''}`;
+          const prev = grouped.get(key);
+          const label = `${item.nome} (${item.linha || 'Bymen'})`;
+          grouped.set(key, {
+            label,
+            linha: item.linha || 'Bymen',
+            total: Number(item.quantidade || 0) + Number(prev?.total || 0),
+          });
+        });
+      });
+
+    let entries = Array.from(grouped.values());
+    if (produtoFiltroMedicao !== 'Todos') {
+      entries = entries.filter((item) => item.label.startsWith(`${produtoFiltroMedicao} (`));
+    } else {
+      entries = entries.sort((a, b) => b.total - a.total).slice(0, 8);
+    }
+
+    return entries.map((item) => ({
+      ...item,
+      color: getLinhaColor(item.linha),
+    }));
+  }, [sales, barbeariaId, monthWindow, produtoFiltroMedicao]);
+
+  const vendasBancadaData = useMemo(() => {
+    const grouped = new Map<string, { label: string; linha: string; total: number }>();
+
+    sales
+      .filter((s) => (barbeariaId ? s.clientId === barbeariaId : true))
+      .forEach((s) => {
+        const parsed = parseMeasurementDate(s.dateTime);
+        if (!parsed) return;
+        if (!new Set(monthWindow.map((m) => m.key)).has(getMonthKey(parsed))) return;
+
+        (s.items || []).forEach((item: any) => {
+          if (!String(item.id || '').startsWith('b')) return;
+          const key = `${item.id || item.nome}-${item.linha || ''}`;
+          const prev = grouped.get(key);
+          const label = `${item.nome} (${item.linha || 'Bymen'})`;
+          grouped.set(key, {
+            label,
+            linha: item.linha || 'Bymen',
+            total: Number(item.quantidade || 0) + Number(prev?.total || 0),
+          });
+        });
+      });
+
+    let entries = Array.from(grouped.values());
+    if (produtoFiltroBancada !== 'Todos') {
+      entries = entries.filter((item) => item.label.startsWith(`${produtoFiltroBancada} (`));
+    } else {
+      entries = entries.sort((a, b) => b.total - a.total).slice(0, 8);
+    }
+
+    return entries.map((item) => ({
+      ...item,
+      color: getLinhaColor(item.linha),
+    }));
+  }, [sales, barbeariaId, monthWindow, produtoFiltroBancada]);
+
   const vendasChartWidth = Math.max(screenWidth - (isSmallScreen ? 16 : 48), salesData.labels.length * (isSmallScreen ? 70 : 84));
+
+  const periodLabel = useMemo(() => {
+    const selected = periodos.find((p) => p.value === periodo);
+    return selected?.label || 'Período customizado';
+  }, [periodo]);
+
+  async function handleExportChart(
+    chartTitle: string,
+    points: Array<{ label: string; value: number }>,
+  ) {
+    try {
+      const uri = await generateReportChartPDF({
+        clientName: selectedBarbearia?.nome || 'Barbearia',
+        chartTitle,
+        periodLabel,
+        points,
+      });
+      await sharePdf(uri);
+    } catch (error) {
+      Alert.alert('Falha ao exportar', (error as Error)?.message || 'Não foi possível exportar este gráfico.');
+    }
+  }
 
   function renderHorizontalRanking(
     title: string,
@@ -360,7 +495,18 @@ export default function RelatoriosScreen() {
               Vendas por mês (colunas)
             </Text>
           </View>
-          <TouchableOpacity style={{ padding: 6, borderRadius: 6, backgroundColor: '#DBEAFE' }} onPress={() => alert('Exportação em breve!')}>
+          <TouchableOpacity
+            style={{ padding: 6, borderRadius: 6, backgroundColor: '#DBEAFE' }}
+            onPress={() =>
+              handleExportChart(
+                'Vendas por mês',
+                salesData.labels.map((label, index) => ({
+                  label,
+                  value: Number(salesData.data[index] || 0),
+                })),
+              )
+            }
+          >
             <Ionicons name="share-outline" size={18} color="#2563EB" />
           </TouchableOpacity>
         </View>
@@ -388,18 +534,19 @@ export default function RelatoriosScreen() {
             data={vendasPorMesFiltrado}
             width={vendasChartWidth}
             height={isSmallScreen ? 200 : 230}
-            yAxisLabel={''}
+            yAxisLabel={'R$ '}
             yAxisSuffix={''}
             fromZero
-            showValuesOnTopOfBars
+            showValuesOnTopOfBars={false}
             withInnerLines
             chartConfig={{
               backgroundColor: '#F0F9FF',
               backgroundGradientFrom: '#F0F9FF',
               backgroundGradientTo: '#F0F9FF',
-              decimalPlaces: 0,
+              decimalPlaces: 2,
               color: (opacity = 1) => `rgba(59, 130, 246, ${opacity})`,
               labelColor: (opacity = 1) => `rgba(30, 64, 175, ${opacity})`,
+              formatYLabel: (value) => formatCurrency(Number(value || 0)).replace('R$', ''),
               style: { borderRadius: 16 },
               propsForBackgroundLines: {
                 strokeDasharray: '',
@@ -408,6 +555,14 @@ export default function RelatoriosScreen() {
             style={{ borderRadius: 16 }}
           />
         </ScrollView>
+        <View style={{ marginTop: 10 }}>
+          {salesData.labels.map((label, index) => (
+            <View key={`money-${label}-${index}`} style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
+              <Text style={{ color: '#1E3A8A', fontSize: 12 }}>{label}</Text>
+              <Text style={{ color: '#1E3A8A', fontSize: 12, fontWeight: '700' }}>{formatCurrency(Number(salesData.data[index] || 0))}</Text>
+            </View>
+          ))}
+        </View>
       </View>
 
       {/* Card: Medição */}
@@ -426,7 +581,7 @@ export default function RelatoriosScreen() {
           <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: isSmallScreen ? 6 : 0 }}>
             <Ionicons name="cube-outline" size={22} color="#DC2626" style={{ marginRight: 8 }} />
             <Text style={{ fontSize: isSmallScreen ? 15 : 19, fontWeight: '700', color: '#DC2626', letterSpacing: 0.2 }}>
-              Medição
+              {isVendaClient ? 'Vendas - Produtos' : 'Medição'}
             </Text>
           </View>
           <TouchableOpacity
@@ -437,11 +592,27 @@ export default function RelatoriosScreen() {
               Filtro: {produtoFiltroMedicao}
             </Text>
           </TouchableOpacity>
+          <TouchableOpacity
+            style={{ marginTop: isSmallScreen ? 8 : 0, marginLeft: isSmallScreen ? 0 : 8, padding: 6, borderRadius: 6, backgroundColor: '#FECACA' }}
+            onPress={() =>
+              handleExportChart(
+                isVendaClient ? 'Vendas - Produtos' : 'Medição - Produtos',
+                (isVendaClient ? vendasProdutosData : produtosData).map((item) => ({
+                  label: item.label,
+                  value: Number(item.total || 0),
+                })),
+              )
+            }
+          >
+            <Ionicons name="share-outline" size={18} color="#B91C1C" />
+          </TouchableOpacity>
         </View>
         {renderHorizontalRanking(
-          'Produtos vendidos',
-          'Cores por linha: Wood (madeira), Ocean (mar).',
-          produtosData,
+          isVendaClient ? 'Produtos vendidos no período' : 'Produtos vendidos',
+          isVendaClient
+            ? 'Ranking por quantidade vendida nas vendas finalizadas.'
+            : 'Cores por linha: Wood (madeira), Ocean (mar).',
+          isVendaClient ? vendasProdutosData : produtosData,
           '#B91C1C',
         )}
       </View>
@@ -462,7 +633,7 @@ export default function RelatoriosScreen() {
           <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: isSmallScreen ? 6 : 0 }}>
             <Ionicons name="flask-outline" size={22} color="#B91C1C" style={{ marginRight: 8 }} />
             <Text style={{ fontSize: isSmallScreen ? 15 : 19, fontWeight: '700', color: '#B91C1C', letterSpacing: 0.2 }}>
-              Bancada
+              {isVendaClient ? 'Vendas - Bancada' : 'Bancada'}
             </Text>
           </View>
           <TouchableOpacity
@@ -473,18 +644,30 @@ export default function RelatoriosScreen() {
               Filtro: {produtoFiltroBancada}
             </Text>
           </TouchableOpacity>
+          <TouchableOpacity
+            style={{ marginTop: isSmallScreen ? 8 : 0, marginLeft: isSmallScreen ? 0 : 8, padding: 6, borderRadius: 6, backgroundColor: '#FECACA' }}
+            onPress={() =>
+              handleExportChart(
+                isVendaClient ? 'Vendas - Bancada' : 'Bancada',
+                (isVendaClient ? vendasBancadaData : bancadaData).map((item) => ({
+                  label: item.label,
+                  value: Number(item.total || 0),
+                })),
+              )
+            }
+          >
+            <Ionicons name="share-outline" size={18} color="#7F1D1D" />
+          </TouchableOpacity>
         </View>
         {renderHorizontalRanking(
-          'Produtos de bancada',
-          'Quantidade consumida de itens de uso interno no período.',
-          bancadaData,
+          isVendaClient ? 'Bancada vendida no período' : 'Produtos de bancada',
+          isVendaClient
+            ? 'Quantidade de itens de bancada vendidos nas vendas finalizadas.'
+            : 'Quantidade consumida de itens de uso interno no período.',
+          isVendaClient ? vendasBancadaData : bancadaData,
           '#7F1D1D',
         )}
       </View>
-
-      <Text style={{ color: '#6B7280', fontSize: 14, textAlign: 'left', marginTop: 8, fontStyle: 'italic' }}>
-        * Dados reais da homologação (Supabase) conforme barbearias, medições e estoque sincronizados.
-      </Text>
 
       <Modal
         visible={modalFiltroMedicaoVisible}

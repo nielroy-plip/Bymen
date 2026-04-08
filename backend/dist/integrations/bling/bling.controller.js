@@ -35,6 +35,9 @@ let BlingController = class BlingController {
     finalize(medicaoId, dto) {
         return this.blingService.finalizeMedicao({ ...dto, medicaoId });
     }
+    finalizeVenda(vendaId, dto) {
+        return this.blingService.finalizeVenda({ ...dto, vendaId });
+    }
 };
 exports.BlingController = BlingController;
 __decorate([
@@ -72,6 +75,14 @@ __decorate([
     __metadata("design:paramtypes", [String, Object]),
     __metadata("design:returntype", void 0)
 ], BlingController.prototype, "finalize", null);
+__decorate([
+    (0, common_1.Post)('vendas/:vendaId/finalize'),
+    __param(0, (0, common_1.Param)('vendaId')),
+    __param(1, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, Object]),
+    __metadata("design:returntype", void 0)
+], BlingController.prototype, "finalizeVenda", null);
 exports.BlingController = BlingController = __decorate([
     (0, common_1.Controller)('integrations/bling'),
     __metadata("design:paramtypes", [bling_service_1.BlingService])

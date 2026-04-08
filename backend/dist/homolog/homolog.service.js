@@ -175,6 +175,7 @@ let HomologService = class HomologService {
             nome: dto.nome,
             telefone: dto.telefone,
             cnpjCpf: dto.cnpjCpf || '',
+            cep: dto.cep || '',
             endereco: dto.endereco || '',
             responsavel: dto.responsavel || '',
         };
@@ -221,6 +222,7 @@ let HomologService = class HomologService {
                 nome: parsed.nome || item.name,
                 telefone: parsed.telefone || item.phone,
                 cnpjCpf: parsed.cnpjCpf || '',
+                cep: parsed.cep || '',
                 endereco: parsed.endereco || '',
                 responsavel: parsed.responsavel || '',
                 createdAt: item.createdAt,
@@ -282,6 +284,33 @@ let HomologService = class HomologService {
                 return null;
             }
         }).filter(Boolean);
+    }
+    async saveSale(dto) {
+        await this.prisma.auditLog.create({
+            data: {
+                action: 'VENDA_UPSERT',
+                userId: dto?.clientId || 'mobile-app',
+                details: JSON.stringify(dto || {}),
+            },
+        });
+        return { success: true, id: dto?.id || null };
+    }
+    async listSales() {
+        const rows = await this.prisma.auditLog.findMany({
+            where: { action: 'VENDA_UPSERT' },
+            orderBy: { createdAt: 'desc' },
+            take: 300,
+        });
+        return rows
+            .map((row) => {
+            try {
+                return JSON.parse(row.details);
+            }
+            catch {
+                return null;
+            }
+        })
+            .filter(Boolean);
     }
     async saveStockMovement(dto) {
         const locationId = dto.locationId || 'homolog-main';

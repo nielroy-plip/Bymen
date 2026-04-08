@@ -19,11 +19,31 @@ import NovoEstoqueScreen from './screens/NovoEstoqueScreen';
 import RelatoriosScreen from './screens/RelatoriosScreen';
 import ConfiguracoesUsuarioScreen from './screens/ConfiguracoesUsuarioScreen';
 import PendenciasSyncScreen from './screens/PendenciasSyncScreen';
+import VendasScreen from './screens/VendasScreen';
+import FinalizarVendaScreen from './screens/FinalizarVendaScreen';
 
 export type RootStackParamList = {
   Login: undefined;
   Dashboard: undefined;
-  Clientes: undefined;
+  Clientes:
+    | {
+        mode?: 'manage' | 'consignado' | 'vendas';
+      }
+    | undefined;
+  Vendas: { clientId: string };
+  FinalizarVenda: {
+    clientId: string;
+    items: Array<{
+      id: string;
+      nome: string;
+      linha: string;
+      cap: number;
+      preco: number;
+      quantidade: number;
+      valorTotal: number;
+    }>;
+    total: number;
+  };
   ClienteDetalhes: { clientId: string } | undefined;
   CriarMedicao: { clientId: string } | undefined;
   FinalizarMedicao: {
@@ -38,6 +58,7 @@ export type RootStackParamList = {
     responsavel?: string;
     observacoes?: string;
     pagamentoPix?: boolean;
+    paymentMethod?: 'PIX' | 'DINHEIRO' | 'CARTAO' | 'BOLETO';
     signatureDataUrl?: string;
   };
   HistoricoMedicoes: undefined;
@@ -103,10 +124,15 @@ export default function Routes() {
       <Stack.Screen
         name="Clientes"
         component={ClientesScreen}
-        options={{
-          title: 'Barbearias',
+        options={({ route }) => ({
+          title:
+            route.params?.mode === 'consignado'
+              ? 'Consignado'
+              : route.params?.mode === 'vendas'
+                ? 'Vendas'
+                : 'Barbearias',
           headerBackTitle: 'Dashboard',
-        }}
+        })}
       />
       <Stack.Screen
         name="ClienteDetalhes"
@@ -120,8 +146,24 @@ export default function Routes() {
         name="CriarMedicao"
         component={CriarMedicaoScreen}
         options={{
-          title: 'Nova medição',
-          headerBackTitle: 'Barbearias',
+          title: 'Consignado',
+          headerBackTitle: 'Dashboard',
+        }}
+      />
+      <Stack.Screen
+        name="Vendas"
+        component={VendasScreen}
+        options={{
+          title: 'Vendas',
+          headerBackTitle: 'Vendas',
+        }}
+      />
+      <Stack.Screen
+        name="FinalizarVenda"
+        component={FinalizarVendaScreen}
+        options={{
+          title: 'Finalizar Venda',
+          headerBackTitle: 'Vendas',
         }}
       />
       <Stack.Screen

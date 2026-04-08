@@ -53,6 +53,12 @@ let HomologController = class HomologController {
     listMeasurements() {
         return this.homologService.listMeasurements();
     }
+    saveSale(dto) {
+        return this.homologService.saveSale(dto);
+    }
+    listSales() {
+        return this.homologService.listSales();
+    }
     saveStockMovement(dto) {
         return this.homologService.saveStockMovement(dto);
     }
@@ -122,6 +128,19 @@ __decorate([
     __metadata("design:paramtypes", []),
     __metadata("design:returntype", void 0)
 ], HomologController.prototype, "listMeasurements", null);
+__decorate([
+    (0, common_1.Post)('sales/upsert'),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", void 0)
+], HomologController.prototype, "saveSale", null);
+__decorate([
+    (0, common_1.Get)('sales'),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", []),
+    __metadata("design:returntype", void 0)
+], HomologController.prototype, "listSales", null);
 __decorate([
     (0, common_1.Post)('stock/movement'),
     __param(0, (0, common_1.Body)()),

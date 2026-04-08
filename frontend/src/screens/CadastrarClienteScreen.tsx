@@ -1,22 +1,26 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, ScrollView, Alert, KeyboardAvoidingView, Platform, Keyboard, TouchableWithoutFeedback, NativeSyntheticEvent, TextInputFocusEventData } from 'react-native';
+import { View, Text, ScrollView, Alert, KeyboardAvoidingView, Platform, Keyboard, TouchableWithoutFeedback, NativeSyntheticEvent, TextInputFocusEventData, Pressable } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../routes';
 import Input from '../components/Input';
 import Button from '../components/Button';
 import { saveClient, listClients } from '../services/api';
 import { useResponsive } from '../hooks/useResponsive';
+import { findAddressByCep, formatCep, normalizeCep } from '../services/cep';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'CadastrarCliente'>;
 
 export default function CadastrarClienteScreen({ navigation, route }: Props) {
   const scrollRef = useRef<ScrollView>(null);
   const clientId = route.params?.clientId;
+  const [operationMode, setOperationMode] = useState<'CONSIGNADO' | 'VENDA'>('VENDA');
   const [nome, setNome] = useState('');
   const [cnpjCpf, setCnpjCpf] = useState('');
+  const [cep, setCep] = useState('');
   const [endereco, setEndereco] = useState('');
   const [responsavel, setResponsavel] = useState('');
   const [telefone, setTelefone] = useState('');
+  const [buscandoCep, setBuscandoCep] = useState(false);
   const { isTablet, padding, fontSize } = useResponsive();
 
   // Carregar dados do cliente se estiver editando
@@ -25,8 +29,10 @@ export default function CadastrarClienteScreen({ navigation, route }: Props) {
       listClients().then((clients) => {
         const client = clients.find((c) => c.id === clientId);
         if (client) {
+          setOperationMode(client.operationMode || 'CONSIGNADO');
           setNome(client.nome || '');
           setCnpjCpf(client.cnpjCpf || '');
+          setCep(client.cep || '');
           setEndereco(client.endereco || '');
           setResponsavel(client.responsavel || '');
           setTelefone(client.telefone || '');
@@ -35,23 +41,63 @@ export default function CadastrarClienteScreen({ navigation, route }: Props) {
     }
   }, [clientId]);
 
-  function normalizeDocumentInput(value: string) {
-    return value.replace(/\D/g, '').slice(0, 14);
-  }
-
-  function normalizePhoneInput(value: string) {
-    return value.replace(/\D/g, '').slice(0, 11);
-  }
-
   function formatDocument(value: string) {
+    const digits = value.replace(/\D/g, '').slice(0, 14);
+
+    if (digits.length <= 11) {
+      if (digits.length <= 3) return digits;
+      if (digits.length <= 6) return `${digits.slice(0, 3)}.${digits.slice(3)}`;
+      if (digits.length <= 9) return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6)}`;
+      return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6, 9)}-${digits.slice(9)}`;
+    }
+
+    if (digits.length <= 12) return `${digits.slice(0, 2)}.${digits.slice(2, 5)}.${digits.slice(5, 8)}/${digits.slice(8)}`;
+    return `${digits.slice(0, 2)}.${digits.slice(2, 5)}.${digits.slice(5, 8)}/${digits.slice(8, 12)}-${digits.slice(12)}`;
+  }
+
+  function formatPhone(value: string) {
     const digits = value.replace(/\D/g, '');
-    if (digits.length === 11) {
-      return digits.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
+    const limited = digits.slice(0, 11);
+
+    if (limited.length === 0) return '';
+    if (limited.length <= 2) return `(${limited}`;
+
+    if (limited.length <= 6) {
+      return `(${limited.slice(0, 2)}) ${limited.slice(2)}`;
     }
-    if (digits.length === 14) {
-      return digits.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, '$1.$2.$3/$4-$5');
+
+    if (limited.length <= 10) {
+      return `(${limited.slice(0, 2)}) ${limited.slice(2, 6)}-${limited.slice(6)}`;
     }
-    return value;
+
+    return `(${limited.slice(0, 2)}) ${limited.slice(2, 7)}-${limited.slice(7)}`;
+  }
+
+  async function handleBuscarCep() {
+    const cepDigits = normalizeCep(cep);
+    if (cepDigits.length !== 8) {
+      Alert.alert('Validação de CEP', 'Motivo: CEP inválido.\n\nComo ajustar: informe um CEP com 8 dígitos.');
+      return;
+    }
+
+    try {
+      setBuscandoCep(true);
+      const result = await findAddressByCep(cepDigits);
+      if (!result) {
+        Alert.alert('CEP não encontrado', 'Não foi possível localizar este CEP nos Correios.');
+        return;
+      }
+
+      setCep(formatCep(result.cep));
+      const addressParts = [result.logradouro, result.bairro, `${result.localidade}-${result.uf}`].filter(Boolean);
+      if (addressParts.length) {
+        setEndereco(addressParts.join(', '));
+      }
+    } catch (error) {
+      Alert.alert('Falha ao buscar CEP', (error as Error)?.message || 'Não foi possível consultar o CEP no momento.');
+    } finally {
+      setBuscandoCep(false);
+    }
   }
 
   function handleFieldFocus(event: NativeSyntheticEvent<TextInputFocusEventData>) {
@@ -61,20 +107,13 @@ export default function CadastrarClienteScreen({ navigation, route }: Props) {
     }, 40);
   }
 
-  const nomeOk = nome.trim().length >= 2;
-  const enderecoOk = endereco.trim().length >= 5;
-  const responsavelOk = responsavel.trim().length >= 3;
   const docDigits = cnpjCpf.replace(/\D/g, '');
   const phoneDigits = telefone.replace(/\D/g, '');
-  const docOk = docDigits.length === 11 || docDigits.length === 14;
-  const phoneOk = phoneDigits.length >= 10 && phoneDigits.length <= 11;
-  const canOpenInitialStock = nomeOk && enderecoOk && responsavelOk && docOk && phoneOk;
-
   async function handleSalvar() {
-    if (!nome.trim() || !cnpjCpf.trim() || !endereco.trim() || !responsavel.trim() || !telefone.trim()) {
+    if (!nome.trim() || !cnpjCpf.trim() || !cep.trim() || !endereco.trim() || !responsavel.trim() || !telefone.trim()) {
       Alert.alert(
         'Campos obrigatórios',
-        'Motivo: existem campos relevantes sem preenchimento.\n\nComo ajustar: preencha Nome, CNPJ/CPF, Endereço, Responsável e Telefone.',
+        'Motivo: existem campos relevantes sem preenchimento.\n\nComo ajustar: preencha Nome, CNPJ/CPF, CEP, Endereço, Responsável e Telefone.',
       );
       return;
     }
@@ -93,6 +132,15 @@ export default function CadastrarClienteScreen({ navigation, route }: Props) {
       Alert.alert(
         'Validação de documento',
         'Motivo: CNPJ/CPF inválido.\n\nComo ajustar: informe 11 dígitos (CPF) ou 14 dígitos (CNPJ).',
+      );
+      return;
+    }
+
+    const cepDigits = normalizeCep(cep);
+    if (cepDigits.length !== 8) {
+      Alert.alert(
+        'Validação de CEP',
+        'Motivo: CEP inválido.\n\nComo ajustar: informe um CEP com 8 dígitos no formato 00000-000.',
       );
       return;
     }
@@ -119,9 +167,11 @@ export default function CadastrarClienteScreen({ navigation, route }: Props) {
       id,
       nome: nome.trim(),
       cnpjCpf: cnpjCpf.trim(),
+      cep: formatCep(cepDigits),
       endereco: endereco.trim(),
       responsavel: responsavel.trim(),
       telefone: telefone.trim(),
+      operationMode,
     };
 
     try {
@@ -151,6 +201,43 @@ export default function CadastrarClienteScreen({ navigation, route }: Props) {
           keyboardDismissMode="on-drag"
         >
 
+        <Text style={{ fontSize: 16, fontWeight: '700', color: '#111827', marginBottom: 8 }}>Modelo da barbearia</Text>
+        <Text style={{ color: '#6B7280', marginBottom: 10 }}>
+          Escolha como esta barbearia opera no sistema.
+        </Text>
+        <View style={{ flexDirection: 'row', gap: 8, marginBottom: 16 }}>
+          <Pressable
+            onPress={() => setOperationMode('VENDA')}
+            style={{
+              flex: 1,
+              paddingVertical: 12,
+              borderRadius: 10,
+              alignItems: 'center',
+              borderWidth: 1,
+              borderColor: operationMode === 'VENDA' ? '#1D4ED8' : '#E5E7EB',
+              backgroundColor: operationMode === 'VENDA' ? '#DBEAFE' : '#FFFFFF',
+            }}
+          >
+            <Text style={{ color: operationMode === 'VENDA' ? '#1D4ED8' : '#374151', fontWeight: '700' }}>Vendas</Text>
+          </Pressable>
+          <Pressable
+            onPress={() => setOperationMode('CONSIGNADO')}
+            style={{
+              flex: 1,
+              paddingVertical: 12,
+              borderRadius: 10,
+              alignItems: 'center',
+              borderWidth: 1,
+              borderColor: operationMode === 'CONSIGNADO' ? '#0F766E' : '#E5E7EB',
+              backgroundColor: operationMode === 'CONSIGNADO' ? '#CCFBF1' : '#FFFFFF',
+            }}
+          >
+            <Text style={{ color: operationMode === 'CONSIGNADO' ? '#0F766E' : '#374151', fontWeight: '700' }}>
+              Consignado
+            </Text>
+          </Pressable>
+        </View>
+
         <Input
           label="Nome da Barbearia *"
           value={nome}
@@ -162,12 +249,32 @@ export default function CadastrarClienteScreen({ navigation, route }: Props) {
         <Input
           label="CNPJ / CPF *"
           value={cnpjCpf}
-          onChangeText={(value) => setCnpjCpf(normalizeDocumentInput(value))}
+          onChangeText={(value) => setCnpjCpf(formatDocument(value))}
           onFocus={handleFieldFocus}
           placeholder="00.000.000/0000-00"
           keyboardType="numeric"
-          maxLength={14}
+          maxLength={18}
         />
+
+        <Input
+          label="CEP *"
+          value={cep}
+          onChangeText={(value) => setCep(formatCep(value))}
+          onFocus={handleFieldFocus}
+          placeholder="00000-000"
+          keyboardType="numeric"
+          maxLength={9}
+        />
+
+        <Button
+          title={buscandoCep ? 'Buscando CEP...' : 'Buscar CEP'}
+          icon="search-outline"
+          onPress={handleBuscarCep}
+          disabled={buscandoCep}
+          variant="secondary"
+        />
+
+        <View style={{ height: 10 }} />
 
         <Input
           label="Endereço *"
@@ -188,33 +295,19 @@ export default function CadastrarClienteScreen({ navigation, route }: Props) {
         <Input
           label="Telefone *"
           value={telefone}
-          onChangeText={(value) => setTelefone(normalizePhoneInput(value))}
+          onChangeText={(value) => setTelefone(formatPhone(value))}
           onFocus={handleFieldFocus}
-          placeholder="+55 11 99999-9999"
+          placeholder="(11) 99999-9999"
           keyboardType="phone-pad"
-          maxLength={11}
+          maxLength={15}
         />
 
-        {/* Botão de cadastrar estoque inicial removido ao editar */}
         {!clientId && (
-          <Button
-            title="Cadastrar Estoque Inicial"
-            icon="add-circle-outline"
-            disabled={!canOpenInitialStock}
-            onPress={() =>
-              navigation.navigate('NovoEstoque', {
-                draftClient: {
-                  id: `c-${Date.now()}`,
-                  nome: nome.trim(),
-                  cnpjCpf: docDigits,
-                  endereco: endereco.trim(),
-                  responsavel: responsavel.trim(),
-                  telefone: phoneDigits,
-                },
-              })
-            }
-            style={{ marginBottom: 16 }}
-          />
+          <Text style={{ color: '#2563EB', marginBottom: 16 }}>
+            {operationMode === 'VENDA'
+              ? 'Modo Vendas: os itens vendidos serão baixados apenas do estoque da Bymen.'
+              : 'Modo Consignado: este cliente participa do fluxo de medição/consignado.'}
+          </Text>
         )}
         <Button
           title={clientId ? 'Atualizar Cliente' : 'Salvar Cliente'}

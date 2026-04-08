@@ -5,6 +5,7 @@ import { Builder, parseStringPromise } from 'xml2js';
 import { PrismaService } from '../../database/prisma.service';
 import {
   FinalizeMedicaoDto,
+  FinalizeVendaDto,
   StockCheckDto,
   StockMovementDto,
   SyncClientDto,
@@ -338,6 +339,69 @@ export class BlingService {
 
     return {
       medicaoId: dto.medicaoId,
+      orderNumber,
+      invoiceAccessKey,
+      invoicePdfUrl,
+      orderRaw: orderResponse,
+      invoiceRaw: invoiceResponse,
+    };
+  }
+
+  async finalizeVenda(dto: FinalizeVendaDto) {
+    const client = await this.prisma.client.findUnique({ where: { id: dto.localClientId } });
+    if (!client?.blingExternalId) {
+      throw new ServiceUnavailableException('Cliente sem vínculo Bling. Sincronize o cliente antes de finalizar.');
+    }
+
+    const orderPayload = {
+      pedido: {
+        cliente: { id: client.blingExternalId },
+        itens: dto.items,
+      },
+    };
+
+    const orderResponse = await this.callBling<any>(
+      {
+        url: '/pedidos/vendas',
+        method: 'POST',
+        data: orderPayload,
+      },
+      orderPayload,
+    );
+
+    const orderNumber =
+      orderResponse?.data?.numero || orderResponse?.retorno?.pedido?.numero || orderResponse?.numero;
+
+    const invoiceResponse = await this.callBling<any>(
+      {
+        url: '/nfe',
+        method: 'POST',
+        data: { pedidoNumero: orderNumber },
+      },
+      { pedidoNumero: orderNumber },
+    );
+
+    const invoiceAccessKey =
+      invoiceResponse?.data?.chaveAcesso || invoiceResponse?.retorno?.nota?.chaveAcesso || null;
+    const invoicePdfUrl =
+      invoiceResponse?.data?.linkPdf || invoiceResponse?.retorno?.nota?.linkPdf || null;
+
+    await this.prisma.auditLog.create({
+      data: {
+        action: 'VENDA_BLING_FINALIZE',
+        userId: dto.localClientId,
+        details: JSON.stringify({
+          vendaId: dto.vendaId,
+          localClientId: dto.localClientId,
+          orderNumber,
+          invoiceAccessKey,
+          invoicePdfUrl,
+        }),
+      },
+    });
+
+    return {
+      vendaId: dto.vendaId,
       orderNumber,
       invoiceAccessKey,
       invoicePdfUrl,

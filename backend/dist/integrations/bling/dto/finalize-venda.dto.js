@@ -9,45 +9,38 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.UpsertClientDto = void 0;
+exports.FinalizeVendaDto = void 0;
 const class_validator_1 = require("class-validator");
-class UpsertClientDto {
+const class_transformer_1 = require("class-transformer");
+class FinalizeVendaItemDto {
 }
-exports.UpsertClientDto = UpsertClientDto;
 __decorate([
     (0, class_validator_1.IsString)(),
-    (0, class_validator_1.MinLength)(2),
     __metadata("design:type", String)
-], UpsertClientDto.prototype, "id", void 0);
+], FinalizeVendaItemDto.prototype, "productId", void 0);
+__decorate([
+    (0, class_validator_1.IsNumber)(),
+    __metadata("design:type", Number)
+], FinalizeVendaItemDto.prototype, "quantity", void 0);
+__decorate([
+    (0, class_validator_1.IsNumber)(),
+    __metadata("design:type", Number)
+], FinalizeVendaItemDto.prototype, "unitPrice", void 0);
+class FinalizeVendaDto {
+}
+exports.FinalizeVendaDto = FinalizeVendaDto;
 __decorate([
     (0, class_validator_1.IsString)(),
-    (0, class_validator_1.MinLength)(2),
     __metadata("design:type", String)
-], UpsertClientDto.prototype, "nome", void 0);
+], FinalizeVendaDto.prototype, "vendaId", void 0);
 __decorate([
     (0, class_validator_1.IsString)(),
-    (0, class_validator_1.MinLength)(8),
     __metadata("design:type", String)
-], UpsertClientDto.prototype, "telefone", void 0);
+], FinalizeVendaDto.prototype, "localClientId", void 0);
 __decorate([
-    (0, class_validator_1.IsString)(),
-    (0, class_validator_1.MinLength)(11),
-    __metadata("design:type", String)
-], UpsertClientDto.prototype, "cnpjCpf", void 0);
-__decorate([
-    (0, class_validator_1.IsOptional)(),
-    (0, class_validator_1.IsString)(),
-    (0, class_validator_1.MinLength)(8),
-    __metadata("design:type", String)
-], UpsertClientDto.prototype, "cep", void 0);
-__decorate([
-    (0, class_validator_1.IsString)(),
-    (0, class_validator_1.MinLength)(5),
-    __metadata("design:type", String)
-], UpsertClientDto.prototype, "endereco", void 0);
-__decorate([
-    (0, class_validator_1.IsString)(),
-    (0, class_validator_1.MinLength)(3),
-    __metadata("design:type", String)
-], UpsertClientDto.prototype, "responsavel", void 0);
-//# sourceMappingURL=upsert-client.dto.js.map
+    (0, class_validator_1.IsArray)(),
+    (0, class_validator_1.ValidateNested)({ each: true }),
+    (0, class_transformer_1.Type)(() => FinalizeVendaItemDto),
+    __metadata("design:type", Array)
+], FinalizeVendaDto.prototype, "items", void 0);
+//# sourceMappingURL=finalize-venda.dto.js.map

@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Param, Post } from '@nestjs/common';
 import { BlingService } from './bling.service';
-import { FinalizeMedicaoDto, StockCheckDto, StockMovementDto, SyncClientDto } from './dto';
+import { FinalizeMedicaoDto, FinalizeVendaDto, StockCheckDto, StockMovementDto, SyncClientDto } from './dto';
 
 @Controller('integrations/bling')
 export class BlingController {
@@ -29,5 +29,10 @@ export class BlingController {
   @Post('medicoes/:medicaoId/finalize')
   finalize(@Param('medicaoId') medicaoId: string, @Body() dto: Omit<FinalizeMedicaoDto, 'medicaoId'>) {
     return this.blingService.finalizeMedicao({ ...dto, medicaoId });
+  }
+
+  @Post('vendas/:vendaId/finalize')
+  finalizeVenda(@Param('vendaId') vendaId: string, @Body() dto: Omit<FinalizeVendaDto, 'vendaId'>) {
+    return this.blingService.finalizeVenda({ ...dto, vendaId });
   }
 }

@@ -113,7 +113,7 @@ export default function LoginScreen({ navigation }: Props) {
           label="E-mail ou usuário"
           value={usuario}
           onChangeText={setUsuario}
-          placeholder="seu@email.com ou seu_usuario"
+          placeholder="seu@email.com ou usuario"
           style={{ width: 320, maxWidth: '90%' }}
         />
         <PasswordInput value={senha} onChangeText={setSenha} style={{ width: 320, maxWidth: '90%' }} />

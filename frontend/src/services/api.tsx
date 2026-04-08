@@ -87,6 +87,7 @@ export type Measurement = {
   responsavel?: string;
   observacoes?: string;
   pagamentoPix?: boolean;
+  paymentMethod?: 'PIX' | 'DINHEIRO' | 'CARTAO' | 'BOLETO';
   signatureDataUrl?: string;
   status?: MeasurementStatus;
   syncStatus?: MeasurementSyncStatus;
@@ -100,9 +101,30 @@ export type Measurement = {
   };
 };
 
+export type SaleItem = {
+  id: string;
+  nome: string;
+  linha: string;
+  cap: number;
+  preco: number;
+  quantidade: number;
+  valorTotal: number;
+};
+
+export type Sale = {
+  id: string;
+  clientId: string;
+  clientName: string;
+  dateTime: string;
+  items: SaleItem[];
+  total: number;
+  paymentMethod?: 'PIX' | 'DINHEIRO' | 'CARTAO' | 'BOLETO';
+  createdAt: string;
+};
+
 export type SyncPendingItem = {
   id: string;
-  entityType: 'MEDICAO';
+  entityType: 'MEDICAO' | 'VENDA';
   entityId: string;
   endpoint: string;
   method: 'POST' | 'PUT';
@@ -137,11 +159,50 @@ export type PriceListRow = {
 };
 
 const KEY = 'bymen_measurements';
+const SALES_KEY = 'bymen_sales';
 const STOCK_KEY = 'bymen_stock';
 const CLIENT_STOCK_KEY = 'bymen_client_stock';
 const CLIENTS_KEY = 'bymen_clients';
 const SYNC_QUEUE_KEY = 'bymen_sync_queue';
 const CURRENT_USER_KEY = 'bymen_current_user';
+
+const STOCK_REMOTE_REFRESH_INTERVAL_MS = 15000;
+let lastStockRemoteFetchAt = 0;
+let stockRemoteBlockedUntil = 0;
+
+function formatCpfCnpj(value: string) {
+  const digits = String(value || '').replace(/\D/g, '').slice(0, 14);
+
+  if (digits.length <= 11) {
+    if (digits.length <= 3) return digits;
+    if (digits.length <= 6) return `${digits.slice(0, 3)}.${digits.slice(3)}`;
+    if (digits.length <= 9) return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6)}`;
+    return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6, 9)}-${digits.slice(9)}`;
+  }
+
+  if (digits.length <= 12) {
+    return `${digits.slice(0, 2)}.${digits.slice(2, 5)}.${digits.slice(5, 8)}/${digits.slice(8)}`;
+  }
+
+  return `${digits.slice(0, 2)}.${digits.slice(2, 5)}.${digits.slice(5, 8)}/${digits.slice(8, 12)}-${digits.slice(12)}`;
+}
+
+function formatPhone(value: string) {
+  const digits = String(value || '').replace(/\D/g, '').slice(0, 11);
+  if (!digits) return '';
+  if (digits.length <= 2) return `(${digits}`;
+  if (digits.length <= 6) return `(${digits.slice(0, 2)}) ${digits.slice(2)}`;
+  if (digits.length <= 10) return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`;
+  return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
+}
+
+function applyClientMasks(client: Client): Client {
+  return {
+    ...client,
+    cnpjCpf: formatCpfCnpj(client.cnpjCpf || ''),
+    telefone: formatPhone(client.telefone || ''),
+  };
+}
 
 export type AppUser = {
   id?: string;
@@ -239,6 +300,21 @@ async function readAll(): Promise<Measurement[]> {
 
 async function writeAll(items: Measurement[]): Promise<void> {
   await AsyncStorage.setItem(KEY, JSON.stringify(items));
+}
+
+async function readSales(): Promise<Sale[]> {
+  const raw = await AsyncStorage.getItem(SALES_KEY);
+  if (!raw) return [];
+  try {
+    const arr = JSON.parse(raw) as Sale[];
+    return Array.isArray(arr) ? arr : [];
+  } catch {
+    return [];
+  }
+}
+
+async function writeSales(items: Sale[]): Promise<void> {
+  await AsyncStorage.setItem(SALES_KEY, JSON.stringify(items));
 }
 
 async function readSyncQueue(): Promise<SyncPendingItem[]> {
@@ -368,15 +444,33 @@ export async function listClients() {
   try {
     const remote = await homologRequest<Client[]>('/homolog/clients');
     if (Array.isArray(remote) && remote.length > 0) {
-      const onlyCustom = remote.filter((c) => !CLIENTS.find((base) => base.id === c.id));
+      const localById = new Map(local.map((c) => [c.id, c]));
+      const pickLocalText = (remoteValue: string | undefined, localValue: string | undefined) => {
+        const localText = String(localValue || '').trim();
+        if (localText.length > 0) return localText;
+        return String(remoteValue || '').trim();
+      };
+
+      const mergedRemote = remote.map((c) => ({
+        ...c,
+        nome: pickLocalText(c.nome, localById.get(c.id)?.nome),
+        telefone: pickLocalText(c.telefone, localById.get(c.id)?.telefone),
+        cnpjCpf: pickLocalText(c.cnpjCpf, localById.get(c.id)?.cnpjCpf),
+        endereco: pickLocalText(c.endereco, localById.get(c.id)?.endereco),
+        responsavel: pickLocalText(c.responsavel, localById.get(c.id)?.responsavel),
+        cep: c.cep || localById.get(c.id)?.cep || '',
+        operationMode: c.operationMode || localById.get(c.id)?.operationMode || 'CONSIGNADO',
+      }));
+
+      const onlyCustom = mergedRemote.filter((c) => !CLIENTS.find((base) => base.id === c.id));
       await writeClients(onlyCustom);
-      return [...onlyCustom, ...CLIENTS];
+      return [...onlyCustom, ...CLIENTS].map(applyClientMasks);
     }
   } catch (error) {
     console.warn('Falha ao buscar clientes remotos, usando local:', error);
   }
 
-  return local;
+  return local.map(applyClientMasks);
 }
 
 export async function saveClient(client: Client) {
@@ -385,6 +479,7 @@ export async function saveClient(client: Client) {
     nome: client.nome,
     telefone: client.telefone,
     cnpjCpf: client.cnpjCpf || '',
+    cep: client.cep || '',
     endereco: client.endereco || '',
     responsavel: client.responsavel || '',
   };
@@ -402,9 +497,14 @@ export async function saveClient(client: Client) {
     throw new Error('Já existe uma barbearia cadastrada com este CNPJ/CPF.');
   }
 
-  const existing = all.find(c => c.id === client.id);
+  const normalizedClient: Client = {
+    ...client,
+    operationMode: client.operationMode || 'CONSIGNADO',
+  };
+
+  const existing = all.find(c => c.id === normalizedClient.id);
   if (existing) {
-    const updated = all.map(c => c.id === client.id ? client : c);
+    const updated = all.map(c => c.id === normalizedClient.id ? normalizedClient : c);
     await writeClients(updated.filter(c => !CLIENTS.find(base => base.id === c.id)));
     try {
       await homologRequest('/homolog/clients/upsert', {
@@ -414,9 +514,9 @@ export async function saveClient(client: Client) {
     } catch (error) {
       console.warn('Falha ao salvar cliente remoto, mantendo persistência local:', error);
     }
-    return client;
+    return normalizedClient;
   }
-  const next = [client, ...all.filter(c => !CLIENTS.find(base => base.id === c.id))];
+  const next = [normalizedClient, ...all.filter(c => !CLIENTS.find(base => base.id === c.id))];
   await writeClients(next);
   try {
     await homologRequest('/homolog/clients/upsert', {
@@ -426,7 +526,65 @@ export async function saveClient(client: Client) {
   } catch (error) {
     console.warn('Falha ao salvar cliente remoto, mantendo persistência local:', error);
   }
-  return client;
+  return normalizedClient;
+}
+
+export async function saveSale(sale: Sale) {
+  const all = await readSales();
+  const next = [sale, ...all.filter((s) => s.id !== sale.id)];
+  await writeSales(next);
+
+  try {
+    await homologRequest('/homolog/sales/upsert', {
+      method: 'POST',
+      body: JSON.stringify(sale),
+    });
+  } catch {
+    await enqueueSyncPending({
+      entityType: 'VENDA',
+      entityId: sale.id,
+      endpoint: `${API_BASE_URL}/homolog/sales/upsert`,
+      method: 'POST',
+      payload: sale,
+      reason: 'Falha ao persistir venda na homologação',
+    });
+  }
+
+  try {
+    await homologRequest(`/integrations/bling/vendas/${sale.id}/finalize`, {
+      method: 'POST',
+      body: JSON.stringify({
+        localClientId: sale.clientId,
+        items: (sale.items || []).map((item) => ({
+          productId: item.id,
+          quantity: Number(item.quantidade || 0),
+          unitPrice: Number(item.preco || 0),
+        })),
+      }),
+    });
+  } catch {
+    await enqueueSyncPending({
+      entityType: 'VENDA',
+      entityId: sale.id,
+      endpoint: `${API_BASE_URL}/integrations/bling/vendas/${sale.id}/finalize`,
+      method: 'POST',
+      payload: {
+        localClientId: sale.clientId,
+        items: (sale.items || []).map((item) => ({
+          productId: item.id,
+          quantity: Number(item.quantidade || 0),
+          unitPrice: Number(item.preco || 0),
+        })),
+      },
+      reason: 'Falha ao enviar venda para o Bling',
+    });
+  }
+
+  return sale;
+}
+
+export async function listSales() {
+  return readSales();
 }
 
 export async function deleteClient(clientId: string) {
@@ -459,17 +617,38 @@ export async function listProducts() {
   // Inclui produtos normais e de bancada na listagem
   const allProducts = [...PRODUCTS, ...PRODUTOS_BANCADA];
 
+  const now = Date.now();
+  const isInRefreshWindow = now - lastStockRemoteFetchAt < STOCK_REMOTE_REFRESH_INTERVAL_MS;
+  const isRemoteBlocked = now < stockRemoteBlockedUntil;
+
+  if (isInRefreshWindow || isRemoteBlocked) {
+    return allProducts.map((p) => ({
+      ...p,
+      estoque: localStock[p.id] ?? 0,
+    }));
+  }
+
   try {
     const remoteBalances = await homologRequest<Record<string, number>>('/homolog/stock/balances');
     const mergedCache = { ...localStock, ...remoteBalances };
     await writeStock(mergedCache);
+    lastStockRemoteFetchAt = now;
 
     return allProducts.map((p) => ({
       ...p,
       estoque: remoteBalances[p.id] ?? localStock[p.id] ?? 0,
     }));
   } catch (error) {
-    console.warn('Falha ao buscar estoque remoto, usando local:', error);
+    const message = String((error as Error)?.message || '').toLowerCase();
+    const isRateLimited = message.includes('too many requests');
+
+    if (!isRateLimited) {
+      console.warn('Falha ao buscar estoque remoto, usando local:', error);
+    } else {
+      // Evita rajadas de chamadas quando o backend responde 429.
+      stockRemoteBlockedUntil = now + 60000;
+    }
+
     return allProducts.map(p => ({ ...p, estoque: localStock[p.id] ?? 0 }));
   }
 }

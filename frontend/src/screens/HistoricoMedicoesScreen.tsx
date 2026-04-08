@@ -1,29 +1,32 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { View, Text, ScrollView, Pressable } from 'react-native';
+import { View, Text, ScrollView, Pressable, Alert } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../routes';
 import Button from '../components/Button';
-import { listMeasurements, listClients, Measurement } from '../services/api';
+import { listMeasurements, listClients, listSales, Measurement, Sale } from '../services/api';
 import { Client } from '../data/clients';
 import { formatCurrency } from '../utils/format';
+import { generateMeasurementPDF, generateSalePDF } from '../services/pdf';
 import { sharePdf } from '../services/whatsapp';
-// import { generateMeasurementPDF } from '../services/pdf';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'HistoricoMedicoes'>;
 
 export default function HistoricoMedicoesScreen({ navigation }: Props) {
   const [items, setItems] = useState<Measurement[]>([]);
+  const [sales, setSales] = useState<Sale[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [selectedMonth, setSelectedMonth] = useState<string>('');
 
   useEffect(() => {
     async function load() {
-      const [savedMeasurements, savedClients] = await Promise.all([
+      const [savedMeasurements, savedSales, savedClients] = await Promise.all([
         listMeasurements(),
+        listSales(),
         listClients(),
       ]);
       setClients(savedClients);
       setItems(savedMeasurements);
+      setSales(savedSales);
     }
 
     load();
@@ -61,11 +64,41 @@ export default function HistoricoMedicoesScreen({ navigation }: Props) {
     return { bg: '#FFFBEB', text: '#92400E', border: '#FDE68A' };
   }
 
-  // Agrupar medições por mês/ano
+  const historyItems = useMemo(() => {
+    const measurementItems = items.map((m) => ({
+      type: 'MEDICAO' as const,
+      id: m.id,
+      clientId: m.clientId,
+      clientName: m.clientName,
+      dateTime: m.dateTime,
+      total: Number(m.totalGeral || 0),
+      measurement: m,
+    }));
+
+    const saleItems = sales.map((s) => ({
+      type: 'VENDA' as const,
+      id: s.id,
+      clientId: s.clientId,
+      clientName: s.clientName,
+      dateTime: s.dateTime,
+      total: Number(s.total || 0),
+      sale: s,
+    }));
+
+    return [...measurementItems, ...saleItems].sort((a, b) => {
+      const [ad, am, ay] = String(a.dateTime || '').split(' ')[0]?.split('/') || [];
+      const [bd, bm, by] = String(b.dateTime || '').split(' ')[0]?.split('/') || [];
+      const at = new Date(Number(ay), Number(am) - 1, Number(ad)).getTime();
+      const bt = new Date(Number(by), Number(bm) - 1, Number(bd)).getTime();
+      return bt - at;
+    });
+  }, [items, sales]);
+
+  // Agrupar histórico por mês/ano
   const monthGroups = useMemo(() => {
-    const groups: Record<string, Measurement[]> = {};
+    const groups: Record<string, typeof historyItems> = {};
     
-    items.forEach((item) => {
+    historyItems.forEach((item) => {
       // Converter data brasileira (dd/mm/yyyy) para formato parseável
       const [datePart] = item.dateTime.split(' ');
       const [day, month, year] = datePart.split('/');
@@ -78,7 +111,7 @@ export default function HistoricoMedicoesScreen({ navigation }: Props) {
     });
     
     return groups;
-  }, [items]);
+  }, [historyItems]);
 
   // Obter lista de meses ordenados (mais recente primeiro)
   const availableMonths = useMemo(() => {
@@ -104,17 +137,84 @@ export default function HistoricoMedicoesScreen({ navigation }: Props) {
 
   // Medições filtradas pelo mês selecionado
   const filteredItems = useMemo(() => {
-    return selectedMonth ? (monthGroups[selectedMonth] || []) : items;
-  }, [selectedMonth, monthGroups, items]);
+    return selectedMonth ? (monthGroups[selectedMonth] || []) : historyItems;
+  }, [selectedMonth, monthGroups, historyItems]);
 
-  async function handleEnviar(id: string) {
-    // Removido: geração e envio de PDF de medição
+  async function handleEnviar(item: (typeof historyItems)[number]) {
+    try {
+      if (item.type === 'VENDA') {
+        const sale = item.sale;
+        if (!sale) {
+          Alert.alert('Venda inválida', 'Não foi possível gerar o PDF desta venda.');
+          return;
+        }
+
+        const pdfUri = await generateSalePDF({
+          clientName: sale.clientName || clients.find((c) => c.id === sale.clientId)?.nome || 'Barbearia',
+          dateTime: sale.dateTime,
+          items: sale.items || [],
+          subtotal: Number(sale.total || 0),
+          total: Number(sale.total || 0),
+          paymentMethod: sale.paymentMethod || 'PIX',
+        });
+        await sharePdf(pdfUri);
+        return;
+      }
+
+      const m = item.measurement;
+      if (!m) {
+        Alert.alert('Medição inválida', 'Não foi possível gerar o PDF desta medição.');
+        return;
+      }
+
+      const client = clients.find((c) => c.id === m.clientId);
+      const pdfUri = await generateMeasurementPDF({
+        client,
+        totalGeral: Number(m.totalGeral || 0),
+        dateTime: m.dateTime,
+        bonusRows: m.bonusRows || [],
+        valorBancada: Number(m.valorBancada || 0),
+        bancadaRows: (m.bancadaRows || []).map((r: any) => ({
+          ...r,
+          quantidadeComprada: Number(r.quantidadeComprada || 0),
+          valorTotal: Number(r.valorTotal || 0),
+        })),
+        valorMedicao: Number(m.valorMedicao || 0),
+        pagamentoPix: m.pagamentoPix,
+        medicaoRows: (m.medicaoRows || []).map((r: any) => ({
+          ...r,
+          quantidadeComprada: Number(r.estoqueAtual || 0),
+          quantidadeVendida: Number(r.vendidos || 0),
+          quantidadeReposta: Number(r.repostos || 0),
+          quantidadeNaoVendida: Number(r.naoVendidos || 0),
+          valorTotal: Number(r.valorMedicao || 0),
+        })),
+        linha: '',
+        nome: '',
+        cap: 0,
+        preco: 0,
+        precoSugestao: 0,
+        quantidadeComprada: 0,
+        quantidadeVendida: 0,
+        quantidadeReposta: 0,
+        quantidadeNaoVendida: 0,
+        novoEstoque: 0,
+        valorTotal: 0,
+        signatureDataUrl: m.signatureDataUrl,
+        responsavelMedicao: m.responsavel,
+        observacoes: m.observacoes,
+      });
+
+      await sharePdf(pdfUri);
+    } catch (error) {
+      Alert.alert('Falha ao enviar PDF', (error as Error)?.message || 'Não foi possível compartilhar o PDF.');
+    }
   }
 
   return (
     <View style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
       <ScrollView contentContainerStyle={{ padding: 24 }}>
-        <Text style={{ fontSize: 20, fontWeight: '700', color: '#111827', marginBottom: 16 }}>Histórico de Medições</Text>
+        <Text style={{ fontSize: 20, fontWeight: '700', color: '#111827', marginBottom: 16 }}>Histórico</Text>
         
         {/* Filtro por mês */}
         {availableMonths.length > 0 && (
@@ -141,7 +241,7 @@ export default function HistoricoMedicoesScreen({ navigation }: Props) {
                       {formatMonth(month)}
                     </Text>
                     <Text style={{ color: isSelected ? '#DBEAFE' : '#6B7280', fontSize: 12, textAlign: 'center', marginTop: 2 }}>
-                      {count} {count === 1 ? 'medição' : 'medições'}
+                      {count} {count === 1 ? 'registro' : 'registros'}
                     </Text>
                   </Pressable>
                 );
@@ -150,15 +250,57 @@ export default function HistoricoMedicoesScreen({ navigation }: Props) {
           </View>
         )}
 
-        {/* Lista de medições */}
+        {/* Lista do histórico */}
         {filteredItems.length === 0 ? (
           <Text style={{ color: '#6B7280', textAlign: 'center', marginTop: 16, fontStyle: 'italic' }}>
-            {availableMonths.length === 0 ? 'Sem medições salvas' : 'Nenhuma medição neste mês'}
+            {availableMonths.length === 0 ? 'Sem histórico salvo' : 'Nenhum registro neste mês'}
           </Text>
         ) : (
           filteredItems.map((it) => {
             const client = clients.find((c) => c.id === it.clientId);
             const clientDisplayName = client?.nome || it.clientName || 'Barbearia não encontrada';
+            if (it.type === 'VENDA') {
+              return (
+                <View key={it.id} style={{ paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' }}>
+                  <Text style={{ color: '#111827', fontWeight: '600' }}>{clientDisplayName}</Text>
+                  <Text style={{ color: '#6B7280' }}>{it.dateTime}</Text>
+                  <Text style={{ color: '#111827' }}>{formatCurrency(it.total).replace('.', ',')}</Text>
+                  <View
+                    style={{
+                      alignSelf: 'flex-start',
+                      marginTop: 8,
+                      paddingHorizontal: 10,
+                      paddingVertical: 4,
+                      borderRadius: 999,
+                      backgroundColor: '#DBEAFE',
+                      borderWidth: 1,
+                      borderColor: '#BFDBFE',
+                    }}
+                  >
+                    <Text style={{ fontSize: 12, fontWeight: '700', color: '#1D4ED8' }}>Venda finalizada</Text>
+                  </View>
+                  {!!it.sale?.paymentMethod && (
+                    <Text style={{ color: '#6B7280', marginTop: 6, fontSize: 12 }}>
+                      Pagamento: {it.sale.paymentMethod}
+                    </Text>
+                  )}
+                  <View style={{ height: 8 }} />
+                  <Button
+                    title="Reabrir"
+                    onPress={() =>
+                      navigation.navigate('FinalizarVenda', {
+                        clientId: it.clientId,
+                        items: it.sale?.items || [],
+                        total: Number(it.sale?.total || 0),
+                      })
+                    }
+                  />
+                  <View style={{ height: 8 }} />
+                  <Button title="Enviar PDF" onPress={() => handleEnviar(it)} variant="secondary" />
+                </View>
+              );
+            }
+
             const statusStyle = getStatusStyle(it.status);
             const syncStyle = getSyncStyle(it.syncStatus);
             const timeline = Array.isArray(it.timeline) ? it.timeline : [];
@@ -221,7 +363,7 @@ export default function HistoricoMedicoesScreen({ navigation }: Props) {
                   }
                 />
                 <View style={{ height: 8 }} />
-                <Button title="Enviar PDF" onPress={() => handleEnviar(it.id)} variant="secondary" />
+                <Button title="Enviar PDF" onPress={() => handleEnviar(it)} variant="secondary" />
               </View>
             );
           })

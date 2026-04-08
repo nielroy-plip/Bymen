@@ -9,6 +9,7 @@ import {
   updateMeasurementSyncStatus,
   SyncPendingItem,
 } from '../services/api';
+import { notifySyncPending, resetSyncPendingNotificationState } from '../services/notifications';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'PendenciasSync'>;
 
@@ -21,6 +22,11 @@ export default function PendenciasSyncScreen({ navigation }: Props) {
   const loadQueue = useCallback(async () => {
     const queue = await listSyncPending();
     setItems(queue);
+    if (queue.length === 0) {
+      resetSyncPendingNotificationState().catch(() => undefined);
+    } else {
+      notifySyncPending(queue.length).catch(() => undefined);
+    }
     setLoading(false);
   }, []);
 
@@ -170,7 +176,9 @@ export default function PendenciasSyncScreen({ navigation }: Props) {
                 backgroundColor: '#F9FAFB',
               }}
             >
-              <Text style={{ color: '#111827', fontWeight: '700' }}>Medição: {item.entityId}</Text>
+              <Text style={{ color: '#111827', fontWeight: '700' }}>
+                {item.entityType === 'VENDA' ? 'Venda' : 'Medição'}: {item.entityId}
+              </Text>
               <Text style={{ color: '#6B7280', marginTop: 4 }}>Motivo: {item.reason}</Text>
               <Text style={{ color: '#6B7280', marginTop: 2 }}>Criado em: {new Date(item.createdAt).toLocaleString('pt-BR')}</Text>
               <View style={{ height: 10 }} />

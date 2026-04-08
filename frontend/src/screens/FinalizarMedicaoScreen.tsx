@@ -30,6 +30,14 @@ const BACKEND_URL = API_BASE_URL;
 const ENABLE_BLING_SYNC = String(process.env.EXPO_PUBLIC_ENABLE_BLING || '').toLowerCase() === 'true';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'FinalizarMedicao'>;
+type PaymentMethod = 'PIX' | 'DINHEIRO' | 'CARTAO' | 'BOLETO';
+
+const PAYMENT_OPTIONS: Array<{ id: PaymentMethod; label: string }> = [
+  { id: 'PIX', label: 'PIX' },
+  { id: 'DINHEIRO', label: 'Dinheiro' },
+  { id: 'CARTAO', label: 'Cartao' },
+  { id: 'BOLETO', label: 'Boleto' },
+];
 
 export default function FinalizarMedicaoScreen({ navigation, route }: Props) {
   const scrollRef = useRef<ScrollView>(null);
@@ -45,11 +53,14 @@ export default function FinalizarMedicaoScreen({ navigation, route }: Props) {
     responsavel: responsavelParam,
     observacoes: observacoesParam,
     pagamentoPix: pagamentoPixParam,
+    paymentMethod: paymentMethodParam,
     signatureDataUrl: signatureParam,
     bonusRows: bonusRowsParam = []
   } = params;
 
-  const [pagamentoPix, setPagamentoPix] = useState(Boolean(pagamentoPixParam));
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>(
+    paymentMethodParam || (pagamentoPixParam ? 'PIX' : 'DINHEIRO')
+  );
   const [observacoes, setObservacoes] = useState(observacoesParam || '');
 
   // Estado local para produtos bonificados
@@ -270,6 +281,7 @@ export default function FinalizarMedicaoScreen({ navigation, route }: Props) {
         responsavel: responsavel || client.responsavel,
         observacoes,
         pagamentoPix,
+        paymentMethod,
         pdfUri: pdfUri || undefined,
         signatureDataUrl,
         status: 'FINALIZED',
@@ -392,6 +404,7 @@ export default function FinalizarMedicaoScreen({ navigation, route }: Props) {
     );
   }
 
+  const pagamentoPix = paymentMethod === 'PIX';
   // Calcula desconto PIX (5%)
   const valorMedicaoPix = pagamentoPix ? valorMedicao * 0.95 : valorMedicao;
 
@@ -434,25 +447,28 @@ export default function FinalizarMedicaoScreen({ navigation, route }: Props) {
             borderColor: '#3B82F6'
           }}
         >
-          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
-            <TouchableOpacity
-              onPress={() => setPagamentoPix(!pagamentoPix)}
-              style={{
-                width: 24,
-                height: 24,
-                borderWidth: 2,
-                borderColor: pagamentoPix ? '#059669' : '#D1D5DB',
-                borderRadius: 6,
-                backgroundColor: pagamentoPix ? '#059669' : '#FFF',
-                alignItems: 'center',
-                justifyContent: 'center'
-              }}
-            >
-              {pagamentoPix && (
-                <Text style={{ color: '#FFF', fontSize: 18, fontWeight: 'bold' }}>✓</Text>
-              )}
-            </TouchableOpacity>
-            <Text style={{ marginLeft: 8 }}>Pagamento em PIX (5%)</Text>
+          <View style={{ marginBottom: 10 }}>
+            <Text style={{ color: '#374151', fontWeight: '700', marginBottom: 8 }}>Forma de pagamento</Text>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+              {PAYMENT_OPTIONS.map((option) => (
+                <TouchableOpacity
+                  key={option.id}
+                  onPress={() => setPaymentMethod(option.id)}
+                  style={{
+                    paddingVertical: 8,
+                    paddingHorizontal: 12,
+                    borderRadius: 999,
+                    borderWidth: 1,
+                    borderColor: paymentMethod === option.id ? '#111827' : '#D1D5DB',
+                    backgroundColor: paymentMethod === option.id ? '#111827' : '#FFFFFF',
+                  }}
+                >
+                  <Text style={{ color: paymentMethod === option.id ? '#FFFFFF' : '#374151', fontWeight: '700' }}>
+                    {option.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
           </View>
           <Text style={{ fontSize: fontSize.base, fontWeight: '700', color: '#1E40AF', marginBottom: 8 }}>
             📊 Medição (Produtos Vendidos)

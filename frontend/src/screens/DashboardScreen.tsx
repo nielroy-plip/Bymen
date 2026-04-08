@@ -5,24 +5,29 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
 import { RootStackParamList } from '../routes';
 import Button from '../components/Button';
-import { listMeasurements, listProducts, listSyncPending, Measurement, SyncPendingItem } from '../services/api';
+import { listMeasurements, listProducts, listSyncPending, listSales, Measurement, Sale, SyncPendingItem } from '../services/api';
+import { notifySyncPending } from '../services/notifications';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Dashboard'>;
 
 export default function DashboardScreen({ navigation }: Props) {
   const [measurements, setMeasurements] = useState<Measurement[]>([]);
+  const [sales, setSales] = useState<Sale[]>([]);
   const [syncPending, setSyncPending] = useState<SyncPendingItem[]>([]);
   const [criticalStockCount, setCriticalStockCount] = useState(0);
   const [criticalStockItems, setCriticalStockItems] = useState<Array<{ id: string; nome: string; linha: string; estoque: number }>>([]);
 
   const loadData = useCallback(async () => {
-      const [ms, pendings, products] = await Promise.all([
+      const [ms, vendas, pendings, products] = await Promise.all([
         listMeasurements(),
+        listSales(),
         listSyncPending(),
         listProducts(),
       ]);
       setMeasurements(ms);
+      setSales(vendas);
       setSyncPending(pendings);
+      notifySyncPending(pendings.length).catch(() => undefined);
       const critical = products
         .filter((p: any) => (p.estoque ?? 0) <= 10)
         .map((p: any) => ({ id: p.id, nome: p.nome, linha: p.linha ?? '-', estoque: p.estoque ?? 0 }))
@@ -57,22 +62,40 @@ export default function DashboardScreen({ navigation }: Props) {
     const totalValue = monthMeasurements.reduce((acc, item) => acc + (item.totalGeral || 0), 0);
     const totalMedicao = monthMeasurements.reduce((acc, item) => acc + (item.valorMedicao || 0), 0);
     const totalBancada = monthMeasurements.reduce((acc, item) => acc + (item.valorBancada || 0), 0);
+    const monthSalesTotal = sales.reduce((acc, item) => {
+      const [datePart] = String(item.dateTime || '').split(' ');
+      const [day, month, year] = (datePart || '').split('/');
+      if (!month || !year) return acc;
+      if (Number(month) !== thisMonth || Number(year) !== thisYear) return acc;
+      return acc + Number(item.total || 0);
+    }, 0);
 
     return {
       monthCount: monthMeasurements.length,
-      monthTotal: totalValue,
+      monthTotal: totalValue + monthSalesTotal,
       monthTotalMedicao: totalMedicao,
       monthTotalBancada: totalBancada,
+      monthTotalSales: monthSalesTotal,
       pendingSync: syncPending.length,
       criticalStock: criticalStockCount,
     };
-  }, [measurements, syncPending, criticalStockCount]);
+  }, [measurements, sales, syncPending, criticalStockCount]);
 
   const items = [
     {
+      title: 'Vendas',
+      icon: 'cart-outline' as const,
+      onPress: () => navigation.navigate('Clientes', { mode: 'vendas' }),
+    },
+    {
+      title: 'Consignado',
+      icon: 'clipboard-outline' as const,
+      onPress: () => navigation.navigate('Clientes', { mode: 'consignado' }),
+    },
+    {
       title: 'Barbearias',
       icon: 'people-outline' as const,
-      onPress: () => navigation.navigate('Clientes'),
+      onPress: () => navigation.navigate('Clientes', { mode: 'manage' }),
     },
     {
       title: 'Estoque',
@@ -126,6 +149,9 @@ export default function DashboardScreen({ navigation }: Props) {
             </Text>
             <Text style={{ color: '#991B1B', fontSize: 12, fontWeight: '600', marginTop: 2 }}>
               Bancada: R${kpis.monthTotalBancada.toFixed(2).replace('.', ',')}
+            </Text>
+            <Text style={{ color: '#2563EB', fontSize: 12, fontWeight: '600', marginTop: 2 }}>
+              Vendas: R${kpis.monthTotalSales.toFixed(2).replace('.', ',')}
             </Text>
           </View>
           <View style={{ width: '48%', backgroundColor: '#FEF2F2', borderColor: '#FEE2E2', borderWidth: 1, borderRadius: 12, padding: 10, marginBottom: 10 }}>

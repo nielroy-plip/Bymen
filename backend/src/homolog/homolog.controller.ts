@@ -57,6 +57,16 @@ export class HomologController {
     return this.homologService.listMeasurements();
   }
 
+  @Post('sales/upsert')
+  saveSale(@Body() dto: any) {
+    return this.homologService.saveSale(dto);
+  }
+
+  @Get('sales')
+  listSales() {
+    return this.homologService.listSales();
+  }
+
   @Post('stock/movement')
   saveStockMovement(@Body() dto: StockMovementDto) {
     return this.homologService.saveStockMovement(dto);

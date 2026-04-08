@@ -10,9 +10,13 @@ import { Client } from '../data/clients';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Clientes'>;
 
-export default function ClientesScreen({ navigation }: Props) {
+export default function ClientesScreen({ navigation, route }: Props) {
+  const mode = route.params?.mode || 'manage';
+  const isConsignadoMode = mode === 'consignado';
+  const isVendasMode = mode === 'vendas';
   const [clients, setClients] = useState<Client[]>([]);
   const [searchText, setSearchText] = useState('');
+  const [visualFilter, setVisualFilter] = useState<'ALL' | 'VENDA' | 'CONSIGNADO'>('ALL');
 
   useEffect(() => {
     loadClients();
@@ -25,12 +29,25 @@ export default function ClientesScreen({ navigation }: Props) {
 
   // Filtrar clientes com base no texto de busca
   const filteredClients = useMemo(() => {
+    const modeFiltered = clients.filter((client) => {
+      if (isVendasMode) return client.operationMode === 'VENDA';
+      if (isConsignadoMode) return client.operationMode !== 'VENDA';
+      return true;
+    });
+
+    const visualFiltered = modeFiltered.filter((client) => {
+      if (isVendasMode || isConsignadoMode) return true;
+      if (visualFilter === 'VENDA') return client.operationMode === 'VENDA';
+      if (visualFilter === 'CONSIGNADO') return client.operationMode !== 'VENDA';
+      return true;
+    });
+
     if (!searchText.trim()) {
-      return clients;
+      return visualFiltered;
     }
 
     const search = searchText.toLowerCase().trim();
-    return clients.filter((client) => {
+    return visualFiltered.filter((client) => {
       return (
         client.nome.toLowerCase().includes(search) ||
         client.responsavel?.toLowerCase().includes(search) ||
@@ -38,7 +55,7 @@ export default function ClientesScreen({ navigation }: Props) {
         client.telefone?.toLowerCase().includes(search)
       );
     });
-  }, [clients, searchText]);
+  }, [clients, isConsignadoMode, isVendasMode, searchText, visualFilter]);
 
   return (
     <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
@@ -48,7 +65,16 @@ export default function ClientesScreen({ navigation }: Props) {
         keyboardVerticalOffset={Platform.OS === 'ios' ? 72 : 0}
       >
       <ScrollView contentContainerStyle={{ padding: 24 }} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
-        <Text style={{ fontSize: 24, fontWeight: '700', color: '#111827', marginBottom: 16 }}>Clientes</Text>
+        <Text style={{ fontSize: 24, fontWeight: '700', color: '#111827', marginBottom: 8 }}>
+          {isVendasMode ? 'Vendas' : isConsignadoMode ? 'Consignado' : 'Barbearias'}
+        </Text>
+        <Text style={{ color: '#6B7280', marginBottom: 12 }}>
+          {isVendasMode
+            ? 'Selecione uma barbearia para registrar a venda.'
+            : isConsignadoMode
+            ? 'Selecione uma barbearia para iniciar a medição.'
+            : 'Gerencie as barbearias cadastradas.'}
+        </Text>
         
         {/* Campo de busca */}
         <Input
@@ -57,9 +83,51 @@ export default function ClientesScreen({ navigation }: Props) {
           value={searchText}
           onChangeText={setSearchText}
         />
+
+        {!isConsignadoMode && !isVendasMode && (
+          <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
+            <Pressable
+              onPress={() => setVisualFilter('ALL')}
+              style={{
+                paddingVertical: 8,
+                paddingHorizontal: 12,
+                borderRadius: 999,
+                backgroundColor: visualFilter === 'ALL' ? '#111827' : '#F3F4F6',
+              }}
+            >
+              <Text style={{ color: visualFilter === 'ALL' ? '#FFFFFF' : '#374151', fontWeight: '700' }}>Todos</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => setVisualFilter('VENDA')}
+              style={{
+                paddingVertical: 8,
+                paddingHorizontal: 12,
+                borderRadius: 999,
+                backgroundColor: visualFilter === 'VENDA' ? '#1D4ED8' : '#EFF6FF',
+              }}
+            >
+              <Text style={{ color: visualFilter === 'VENDA' ? '#FFFFFF' : '#1D4ED8', fontWeight: '700' }}>Vendas</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => setVisualFilter('CONSIGNADO')}
+              style={{
+                paddingVertical: 8,
+                paddingHorizontal: 12,
+                borderRadius: 999,
+                backgroundColor: visualFilter === 'CONSIGNADO' ? '#0F766E' : '#ECFEFF',
+              }}
+            >
+              <Text style={{ color: visualFilter === 'CONSIGNADO' ? '#FFFFFF' : '#0F766E', fontWeight: '700' }}>
+                Consignado
+              </Text>
+            </Pressable>
+          </View>
+        )}
         
         <View style={{ height: 16 }} />
-        <Button title="Nova Barbearia" onPress={() => navigation.navigate('CadastrarCliente')} variant="secondary" />
+        {!isConsignadoMode && !isVendasMode && (
+          <Button title="Nova Barbearia" onPress={() => navigation.navigate('CadastrarCliente')} variant="secondary" />
+        )}
         
         <View style={{ height: 16 }} />
         
@@ -79,9 +147,42 @@ export default function ClientesScreen({ navigation }: Props) {
           </Card>
         ) : (
           filteredClients.map((c) => (
-            <Pressable key={c.id} onPress={() => navigation.navigate('ClienteDetalhes', { clientId: c.id })}>
+            <Pressable
+              key={c.id}
+              onPress={() =>
+                isConsignadoMode
+                  ? navigation.navigate('CriarMedicao', { clientId: c.id })
+                  : isVendasMode
+                    ? navigation.navigate('Vendas', { clientId: c.id })
+                    : navigation.navigate('ClienteDetalhes', { clientId: c.id })
+              }
+            >
               <Card>
                 <Text style={{ fontSize: 18, fontWeight: '700', color: '#111827' }}>{c.nome}</Text>
+                <View
+                  style={{
+                    alignSelf: 'flex-start',
+                    marginTop: 8,
+                    backgroundColor: c.operationMode === 'VENDA' ? '#DBEAFE' : '#CCFBF1',
+                    paddingHorizontal: 10,
+                    paddingVertical: 4,
+                    borderRadius: 999,
+                  }}
+                >
+                  <Text style={{ color: c.operationMode === 'VENDA' ? '#1D4ED8' : '#0F766E', fontSize: 12, fontWeight: '700' }}>
+                    {c.operationMode === 'VENDA' ? 'Vendas' : 'Consignado'}
+                  </Text>
+                </View>
+                {isConsignadoMode && (
+                  <Text style={{ color: '#3B82F6', marginTop: 6, fontWeight: '600' }}>
+                    Iniciar medição
+                  </Text>
+                )}
+                {isVendasMode && (
+                  <Text style={{ color: '#2563EB', marginTop: 6, fontWeight: '600' }}>
+                    Registrar venda
+                  </Text>
+                )}
               </Card>
             </Pressable>
           ))

@@ -481,3 +481,153 @@ export async function generateEstoquePDF({
   `;
   return saveNamedPdf(html, filePrefix || 'EstoqueInicial', clientName || 'Barbearia', dateTime || '');
 }
+
+export async function generateSalePDF(params: {
+  clientName: string;
+  dateTime: string;
+  items: Array<{
+    id: string;
+    nome: string;
+    linha: string;
+    cap: number;
+    preco: number;
+    quantidade: number;
+    valorTotal: number;
+  }>;
+  subtotal: number;
+  total: number;
+  paymentMethod: 'PIX' | 'DINHEIRO' | 'CARTAO' | 'BOLETO';
+}): Promise<string> {
+  const rowsHtml = params.items
+    .filter((item) => Number(item.quantidade || 0) > 0)
+    .map(
+      (item) =>
+        `<tr>
+          <td style='padding:8px;border:1px solid #1D4ED8;'>${item.nome}</td>
+          <td style='padding:8px;border:1px solid #1D4ED8;'>${item.linha}</td>
+          <td style='padding:8px;border:1px solid #1D4ED8;text-align:center;'>${item.cap}${getProductUnit(item.nome)}</td>
+          <td style='padding:8px;border:1px solid #1D4ED8;text-align:center;'>${item.quantidade}</td>
+          <td style='padding:8px;border:1px solid #1D4ED8;text-align:right;'>${formatCurrency(item.preco)}</td>
+          <td style='padding:8px;border:1px solid #1D4ED8;text-align:right;font-weight:700;'>${formatCurrency(item.valorTotal)}</td>
+        </tr>`
+    )
+    .join('');
+
+  const paymentLabel =
+    params.paymentMethod === 'PIX'
+      ? 'PIX'
+      : params.paymentMethod === 'DINHEIRO'
+        ? 'Dinheiro'
+        : params.paymentMethod === 'CARTAO'
+          ? 'Cartao'
+          : 'Boleto';
+
+  const pixDiscount = params.paymentMethod === 'PIX' ? params.subtotal - params.total : 0;
+
+  const html = `
+  <html>
+    <head>
+      <meta charset="utf-8" />
+      <title>Venda Bymen</title>
+    </head>
+    <body style="font-family: Arial, sans-serif; color:#111827;">
+      <div style="padding:24px">
+        <h1 style="margin:0 0 8px 0;color:#1D4ED8">Bymen • Resumo de Venda</h1>
+        <p style="margin:0 0 6px 0"><strong>Barbearia:</strong> ${params.clientName}</p>
+        <p style="margin:0 0 20px 0"><strong>Data:</strong> ${params.dateTime}</p>
+
+        <div style="padding:16px;background:#EFF6FF;border:2px solid #1D4ED8;border-radius:8px">
+          <h2 style="margin:0 0 12px 0;color:#1E40AF">Itens da venda</h2>
+          <table style="width:100%;border-collapse:collapse;margin-top:12px;font-size:12px">
+            <thead>
+              <tr style="background:#DBEAFE">
+                <th style="padding:8px;border:1px solid #1D4ED8;text-align:left">Produto</th>
+                <th style="padding:8px;border:1px solid #1D4ED8;text-align:left">Linha</th>
+                <th style="padding:8px;border:1px solid #1D4ED8;text-align:center">Cap.</th>
+                <th style="padding:8px;border:1px solid #1D4ED8;text-align:center">Qtd.</th>
+                <th style="padding:8px;border:1px solid #1D4ED8;text-align:right">Valor Unitario</th>
+                <th style="padding:8px;border:1px solid #1D4ED8;text-align:right">Valor Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rowsHtml}
+            </tbody>
+          </table>
+        </div>
+
+        <div style="margin-top:20px;padding:16px;background:#F9FAFB;border:1px solid #E5E7EB;border-radius:8px">
+          <p style="margin:0 0 8px 0"><strong>Forma de pagamento:</strong> ${paymentLabel}</p>
+          <p style="margin:0 0 8px 0"><strong>Subtotal:</strong> ${formatCurrency(params.subtotal)}</p>
+          ${params.paymentMethod === 'PIX' ? `<p style="margin:0 0 8px 0;color:#059669"><strong>Desconto PIX (5%):</strong> -${formatCurrency(pixDiscount)}</p>` : ''}
+          <p style="margin:0;font-size:20px;font-weight:700;color:#111827"><strong>Total:</strong> ${formatCurrency(params.total)}</p>
+        </div>
+      </div>
+    </body>
+  </html>
+  `;
+
+  return saveNamedPdf(html, 'Venda', params.clientName || 'Barbearia', params.dateTime);
+}
+
+export async function generateReportChartPDF(params: {
+  clientName: string;
+  chartTitle: string;
+  periodLabel: string;
+  dateTime?: string;
+  points: Array<{ label: string; value: number }>;
+}): Promise<string> {
+  const rowsHtml = (params.points || [])
+    .map(
+      (p) =>
+        `<tr>
+          <td style="padding:8px;border:1px solid #d1d5db">${p.label}</td>
+          <td style="padding:8px;border:1px solid #d1d5db;text-align:right">${formatCurrency(Number(p.value || 0))}</td>
+        </tr>`,
+    )
+    .join('');
+
+  const total = (params.points || []).reduce((sum, p) => sum + Number(p.value || 0), 0);
+  const max = (params.points || []).reduce((acc, p) => Math.max(acc, Number(p.value || 0)), 0);
+
+  const html = `
+  <html>
+    <head>
+      <meta charset="utf-8" />
+      <title>Relatorio ${params.chartTitle}</title>
+    </head>
+    <body style="font-family: Arial, sans-serif; color:#111827;">
+      <div style="padding:24px">
+        <h1 style="margin:0 0 8px 0;color:#1f2937">Bymen • Relatório de Gráfico</h1>
+        <p style="margin:0 0 6px 0"><strong>Barbearia:</strong> ${params.clientName}</p>
+        <p style="margin:0 0 6px 0"><strong>Gráfico:</strong> ${params.chartTitle}</p>
+        <p style="margin:0 0 6px 0"><strong>Período:</strong> ${params.periodLabel}</p>
+        <p style="margin:0 0 16px 0"><strong>Gerado em:</strong> ${params.dateTime || new Date().toLocaleString('pt-BR')}</p>
+
+        <div style="padding:12px;background:#f3f4f6;border:1px solid #e5e7eb;border-radius:8px;margin-bottom:16px">
+          <p style="margin:0 0 6px 0"><strong>Total:</strong> ${formatCurrency(Number(total.toFixed(2)))}</p>
+          <p style="margin:0"><strong>Maior valor:</strong> ${formatCurrency(Number(max.toFixed(2)))}</p>
+        </div>
+
+        <table style="width:100%;border-collapse:collapse;margin-top:8px;font-size:12px">
+          <thead>
+            <tr style="background:#f9fafb">
+              <th style="padding:8px;border:1px solid #d1d5db;text-align:left">Item</th>
+              <th style="padding:8px;border:1px solid #d1d5db;text-align:right">Valor</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rowsHtml || `<tr><td colspan="2" style="padding:12px;border:1px solid #d1d5db;color:#6b7280">Sem dados para exportar.</td></tr>`}
+          </tbody>
+        </table>
+      </div>
+    </body>
+  </html>
+  `;
+
+  return saveNamedPdf(
+    html,
+    `Relatorio_${params.chartTitle}`,
+    params.clientName || 'Barbearia',
+    params.dateTime || new Date().toLocaleString('pt-BR'),
+  );
+}

@@ -18,4 +18,5 @@ __exportStar(require("./sync-client.dto"), exports);
 __exportStar(require("./stock-check.dto"), exports);
 __exportStar(require("./stock-movement.dto"), exports);
 __exportStar(require("./finalize-medicao.dto"), exports);
+__exportStar(require("./finalize-venda.dto"), exports);
 //# sourceMappingURL=index.js.map
