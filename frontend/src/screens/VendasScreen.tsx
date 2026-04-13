@@ -17,8 +17,13 @@ type StockProduct = {
   linha: string;
   cap: number;
   preco: number;
+  preco5?: number;
+  preco10?: number;
+  precoSugestao?: number;
   estoque: number;
 };
+
+type PromoTier = 'BASE' | 'QTD_5' | 'QTD_10';
 
 export default function VendasScreen({ navigation, route }: Props) {
   const clientId = route.params.clientId;
@@ -38,6 +43,9 @@ export default function VendasScreen({ navigation, route }: Props) {
           linha: p.linha,
           cap: p.cap,
           preco: p.preco,
+          preco5: p.preco5,
+          preco10: p.preco10,
+          precoSugestao: p.precoSugestao,
           estoque: p.estoque ?? 0,
         }));
 
@@ -47,18 +55,38 @@ export default function VendasScreen({ navigation, route }: Props) {
     loadData();
   }, [clientId]);
 
+  function getPricingForQuantity(product: StockProduct, quantity: number): {
+    unitPrice: number;
+    tier: PromoTier;
+  } {
+    if (quantity >= 10 && typeof product.preco10 === 'number') {
+      return { unitPrice: product.preco10, tier: 'QTD_10' };
+    }
+
+    if (quantity >= 5 && typeof product.preco5 === 'number') {
+      return { unitPrice: product.preco5, tier: 'QTD_5' };
+    }
+
+    return { unitPrice: product.preco, tier: 'BASE' };
+  }
+
   const items = useMemo<SaleItem[]>(() => {
     return products
       .map((p) => {
         const quantidade = Number(quantities[p.id] || 0);
+        const { unitPrice: precoAplicado, tier } = getPricingForQuantity(p, quantidade);
         return {
           id: p.id,
           nome: p.nome,
           linha: p.linha,
           cap: p.cap,
-          preco: p.preco,
+          preco: precoAplicado,
+          precoBase: p.preco,
+          preco5: p.preco5,
+          preco10: p.preco10,
+          faixaPrecoAplicada: tier,
           quantidade,
-          valorTotal: quantidade * p.preco,
+          valorTotal: quantidade * precoAplicado,
         };
       })
       .filter((item) => item.quantidade > 0);
@@ -151,13 +179,33 @@ export default function VendasScreen({ navigation, route }: Props) {
 
           {displayedProducts.map((product) => (
             <Card key={product.id}>
+              {(() => {
+                const quantidadeAtual = Number(quantities[product.id] || 0);
+                const { unitPrice: precoAtual } = getPricingForQuantity(product, quantidadeAtual);
+                return (
+                  <>
               <Text style={{ fontSize: 16, fontWeight: '700', color: '#111827' }}>{product.nome}</Text>
               <Text style={{ color: '#6B7280', marginTop: 4 }}>
                 {product.linha} • {product.cap}ml • Disponível: {product.estoque}
               </Text>
               <Text style={{ color: '#1F2937', marginTop: 4, fontWeight: '600' }}>
-                {formatCurrency(product.preco)}
+                Preço base: {formatCurrency(product.preco)}
               </Text>
+              {(typeof product.preco5 === 'number' || typeof product.preco10 === 'number') && (
+                <Text style={{ color: '#2563EB', marginTop: 2, fontSize: 12 }}>
+                  Promo: 5 un = {formatCurrency(product.preco5 ?? product.preco)} • 10 un = {formatCurrency(product.preco10 ?? product.preco5 ?? product.preco)}
+                </Text>
+              )}
+              {typeof product.precoSugestao === 'number' && (
+                <Text style={{ color: '#6B7280', marginTop: 2, fontSize: 12 }}>
+                  Sugestão revenda: {formatCurrency(product.precoSugestao)}
+                </Text>
+              )}
+              {quantidadeAtual > 0 && (
+                <Text style={{ color: '#059669', marginTop: 2, fontSize: 12, fontWeight: '700' }}>
+                  Preço aplicado: {formatCurrency(precoAtual)}
+                </Text>
+              )}
               <View style={{ marginTop: 12 }}>
                 <Input
                   label="Quantidade"
@@ -172,6 +220,9 @@ export default function VendasScreen({ navigation, route }: Props) {
                   placeholder="0"
                 />
               </View>
+                  </>
+                );
+              })()}
             </Card>
           ))}
 

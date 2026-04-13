@@ -447,29 +447,6 @@ export default function FinalizarMedicaoScreen({ navigation, route }: Props) {
             borderColor: '#3B82F6'
           }}
         >
-          <View style={{ marginBottom: 10 }}>
-            <Text style={{ color: '#374151', fontWeight: '700', marginBottom: 8 }}>Forma de pagamento</Text>
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-              {PAYMENT_OPTIONS.map((option) => (
-                <TouchableOpacity
-                  key={option.id}
-                  onPress={() => setPaymentMethod(option.id)}
-                  style={{
-                    paddingVertical: 8,
-                    paddingHorizontal: 12,
-                    borderRadius: 999,
-                    borderWidth: 1,
-                    borderColor: paymentMethod === option.id ? '#111827' : '#D1D5DB',
-                    backgroundColor: paymentMethod === option.id ? '#111827' : '#FFFFFF',
-                  }}
-                >
-                  <Text style={{ color: paymentMethod === option.id ? '#FFFFFF' : '#374151', fontWeight: '700' }}>
-                    {option.label}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
           <Text style={{ fontSize: fontSize.base, fontWeight: '700', color: '#1E40AF', marginBottom: 8 }}>
             📊 Medição (Produtos Vendidos)
           </Text>
@@ -655,6 +632,31 @@ export default function FinalizarMedicaoScreen({ navigation, route }: Props) {
               onFocus={handleFieldFocus}
             />
         </View>
+
+          <View style={{ marginTop: isTablet ? 12 : 10 }}>
+            <Text style={{ fontSize: 16, fontWeight: '700', color: '#111827', marginBottom: 10 }}>Forma de pagamento</Text>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+              {PAYMENT_OPTIONS.map((option) => (
+                <TouchableOpacity
+                  key={option.id}
+                  onPress={() => setPaymentMethod(option.id)}
+                  style={{
+                    paddingVertical: 10,
+                    paddingHorizontal: 12,
+                    borderRadius: 999,
+                    borderWidth: 1,
+                    borderColor: paymentMethod === option.id ? '#111827' : '#D1D5DB',
+                    backgroundColor: paymentMethod === option.id ? '#111827' : '#FFFFFF',
+                  }}
+                >
+                  <Text style={{ color: paymentMethod === option.id ? '#FFFFFF' : '#374151', fontWeight: '700' }}>
+                    {option.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            {pagamentoPix && <Text style={{ color: '#059669', marginTop: 10 }}>Desconto PIX: 5%</Text>}
+          </View>
 
         {/* Assinatura */}
         <SignaturePad label="Assinatura do responsável da barbearia" onChange={setSignatureDataUrl} />

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { View, Text, ScrollView, ActivityIndicator, Pressable, TextInput, KeyboardAvoidingView, Platform, Keyboard, TouchableWithoutFeedback } from 'react-native';
+import { View, Text, FlatList, ActivityIndicator, Pressable, KeyboardAvoidingView, Platform, Keyboard, TouchableWithoutFeedback } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../routes';
 import { Client } from '../data/clients';
@@ -158,9 +158,25 @@ export default function CriarMedicaoScreen({ navigation, route }: Props) {
   // HANDLERS: ABA MEDIÇÃO
   // ========================================
   const handleMedicaoRowChange = useCallback((row: MedicaoRow) => {
-    setMedicaoRows((prev) => ({
-      ...prev,
-      [row.id]: {
+    setMedicaoRows((prev) => {
+      const current = prev[row.id];
+      const same =
+        current &&
+        current.estoqueAtual === row.estoqueAtual &&
+        current.vendidos === row.vendidos &&
+        current.repostos === row.repostos &&
+        current.diferenca === row.diferenca &&
+        current.novoEstoque === row.novoEstoque &&
+        current.valorMedicao === row.valorMedicao &&
+        (current.produtosRetirados ?? 0) === (row.produtosRetirados ?? 0);
+
+      if (same) {
+        return prev;
+      }
+
+      return {
+        ...prev,
+        [row.id]: {
         id: row.id,
         nome: row.nome,
         linha: row.linha,
@@ -174,8 +190,9 @@ export default function CriarMedicaoScreen({ navigation, route }: Props) {
         novoEstoque: row.novoEstoque,
         valorMedicao: row.valorMedicao,
         produtosRetirados: row.produtosRetirados ?? 0
-      }
-    }));
+        }
+      };
+    });
   }, []);
 
   const valorMedicao = useMemo(() => sum(medicaoArray.map((r) => r.valorMedicao)), [medicaoArray]);
@@ -191,6 +208,25 @@ export default function CriarMedicaoScreen({ navigation, route }: Props) {
   const valorBancada = useMemo(() => sum(bancadaArray.map((r) => r.valorTotal)), [bancadaArray]);
   const bonusArray = useMemo(() => Object.values(bonusRows), [bonusRows]);
   const valorBonus = useMemo(() => sum(bonusArray.map((r) => r.valorTotal)), [bonusArray]);
+  const bonusQuantidade = useMemo(
+    () => bonusArray.reduce((acc, r) => acc + (r.quantidadeComprada || 0), 0),
+    [bonusArray],
+  );
+
+  const bancadaProducts = useMemo(
+    () => PRODUTOS_BANCADA.map((p) => ({ ...p, precoSugestao: p.precoSugestao ?? 0 })),
+    [],
+  );
+
+  const bonusProducts = useMemo(
+    () =>
+      PRODUTOS_BANCADA.map((p) => ({
+        ...p,
+        id: `${p.id}-bonus`,
+        precoSugestao: p.precoSugestao ?? 0,
+      })),
+    [],
+  );
 
   // ========================================
   // HANDLER: ABA BONIFICAÇÃO
@@ -203,6 +239,210 @@ export default function CriarMedicaoScreen({ navigation, route }: Props) {
   // TOTAL GERAL
   // ========================================
   const totalGeral = useMemo(() => valorMedicao + valorBancada, [valorMedicao, valorBancada]);
+
+  const handleCreateMedicao = useCallback(() => {
+    navigation.navigate('FinalizarMedicao', {
+      clientId: client?.id || '',
+      medicaoRows: medicaoArray,
+      bancadaRows: bancadaArray,
+      bonusRows: bonusArray,
+      valorMedicao,
+      valorBancada,
+      totalGeral,
+      dateTime,
+    });
+  }, [navigation, client?.id, medicaoArray, bancadaArray, bonusArray, valorMedicao, valorBancada, totalGeral, dateTime]);
+
+  const renderMedicaoItem = useCallback(
+    ({ item }: { item: Product }) => (
+      <ProductRow
+        product={item}
+        onChange={handleMedicaoRowChange}
+        initialEstoque={item.estoque}
+        averageSale3Months={averageSalesByProduct[item.id] ?? 0}
+      />
+    ),
+    [averageSalesByProduct, handleMedicaoRowChange],
+  );
+
+  const renderBancadaItem = useCallback(
+    ({ item }: { item: typeof bancadaProducts[number] }) => (
+      <BancadaRowComponent product={item} onChange={handleBancadaRowChange} />
+    ),
+    [handleBancadaRowChange],
+  );
+
+  const medicaoFooter = useMemo(
+    () => (
+      <>
+        <View
+          style={{
+            backgroundColor: '#DBEAFE',
+            borderRadius: isTablet ? 12 : 8,
+            padding: isTablet ? 16 : 12,
+            marginTop: isTablet ? 12 : 8,
+            flexDirection: 'row',
+            justifyContent: 'space-between',
+            alignItems: 'center'
+          }}
+        >
+          <Text style={{ fontSize: fontSize.base, fontWeight: '600', color: '#1E40AF' }}>Valor Medição:</Text>
+          <Text style={{ fontSize: fontSize.large, fontWeight: '700', color: '#1E40AF' }}>
+            {formatCurrency(valorMedicao)}
+          </Text>
+        </View>
+
+        <View
+          style={{
+            backgroundColor: '#F9FAFB',
+            borderRadius: isTablet ? 16 : 12,
+            padding: isTablet ? 24 : 16,
+            borderWidth: 1,
+            borderColor: '#E5E7EB',
+            marginTop: isTablet ? 16 : 12,
+            marginBottom: isTablet ? 16 : 12
+          }}
+        >
+          <Text style={{ fontSize: fontSize.base, color: '#6B7280', marginBottom: 4 }}>
+            Medição: {formatCurrency(valorMedicao)}
+          </Text>
+          <Text style={{ fontSize: fontSize.base, color: '#6B7280', marginBottom: 8 }}>
+            Bancada: {formatCurrency(valorBancada)}
+          </Text>
+          {bonusQuantidade > 0 && (
+            <Text style={{ fontSize: fontSize.base, color: '#059669', marginBottom: 8 }}>
+              Bonificação: {bonusQuantidade} produtos
+            </Text>
+          )}
+          <View style={{ borderTopWidth: 1, borderTopColor: '#E5E7EB', paddingTop: 8 }}>
+            <Text style={{ fontSize: fontSize.large, fontWeight: '600', color: '#111827' }}>Valor Total Geral</Text>
+            <Text style={{ color: '#111827', fontSize: fontSize.xlarge, marginTop: 4, fontWeight: '700' }}>
+              {formatCurrency(totalGeral)}
+            </Text>
+          </View>
+        </View>
+
+        <Button title="Criar Medição" onPress={handleCreateMedicao} />
+      </>
+    ),
+    [isTablet, fontSize, valorMedicao, valorBancada, bonusQuantidade, totalGeral, handleCreateMedicao],
+  );
+
+  const bancadaFooter = useMemo(
+    () => (
+      <>
+        <View
+          style={{
+            backgroundColor: '#FEE2E2',
+            borderRadius: isTablet ? 12 : 8,
+            padding: isTablet ? 16 : 12,
+            marginTop: isTablet ? 12 : 8,
+            flexDirection: 'row',
+            justifyContent: 'space-between',
+            alignItems: 'center'
+          }}
+        >
+          <Text style={{ fontSize: fontSize.base, fontWeight: '600', color: '#991B1B' }}>Valor Bancada:</Text>
+          <Text style={{ fontSize: fontSize.large, fontWeight: '700', color: '#991B1B' }}>
+            {formatCurrency(valorBancada)}
+          </Text>
+        </View>
+
+        <View style={{ marginTop: isTablet ? 24 : 16 }}>
+          <Pressable
+            onPress={() => setBonusOpen((open) => !open)}
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              backgroundColor: '#D1FAE5',
+              borderRadius: isTablet ? 12 : 8,
+              padding: isTablet ? 16 : 12,
+              marginBottom: isTablet ? 8 : 6
+            }}
+          >
+            <Text style={{ fontSize: fontSize.base, color: '#059669', fontWeight: '700' }}>
+              Bonificação
+            </Text>
+            <Text style={{ color: '#059669', fontWeight: '700', fontSize: fontSize.base }}>
+              {bonusOpen ? '▲' : '▼'}
+            </Text>
+          </Pressable>
+
+          {bonusOpen && (
+            <>
+              {bonusProducts.map((p) => (
+                <BancadaRowComponent key={p.id} product={p} onChange={handleBonusRowChange} hideValues={true} />
+              ))}
+
+              <View
+                style={{
+                  backgroundColor: '#D1FAE5',
+                  borderRadius: isTablet ? 12 : 8,
+                  padding: isTablet ? 16 : 12,
+                  marginTop: isTablet ? 12 : 8,
+                  flexDirection: 'row',
+                  justifyContent: 'space-between',
+                  alignItems: 'center'
+                }}
+              >
+                <Text style={{ fontSize: fontSize.base, fontWeight: '600', color: '#059669' }}>
+                  Quantidade Bonificada:
+                </Text>
+                <Text style={{ fontSize: fontSize.large, fontWeight: '700', color: '#059669' }}>
+                  {bonusQuantidade}
+                </Text>
+              </View>
+            </>
+          )}
+        </View>
+
+        <View
+          style={{
+            backgroundColor: '#F9FAFB',
+            borderRadius: isTablet ? 16 : 12,
+            padding: isTablet ? 24 : 16,
+            borderWidth: 1,
+            borderColor: '#E5E7EB',
+            marginTop: isTablet ? 16 : 12,
+            marginBottom: isTablet ? 16 : 12
+          }}
+        >
+          <Text style={{ fontSize: fontSize.base, color: '#6B7280', marginBottom: 4 }}>
+            Medição: {formatCurrency(valorMedicao)}
+          </Text>
+          <Text style={{ fontSize: fontSize.base, color: '#6B7280', marginBottom: 8 }}>
+            Bancada: {formatCurrency(valorBancada)}
+          </Text>
+          {bonusQuantidade > 0 && (
+            <Text style={{ fontSize: fontSize.base, color: '#059669', marginBottom: 8 }}>
+              Bonificação: {bonusQuantidade} produtos
+            </Text>
+          )}
+          <View style={{ borderTopWidth: 1, borderTopColor: '#E5E7EB', paddingTop: 8 }}>
+            <Text style={{ fontSize: fontSize.large, fontWeight: '600', color: '#111827' }}>Valor Total Geral</Text>
+            <Text style={{ color: '#111827', fontSize: fontSize.xlarge, marginTop: 4, fontWeight: '700' }}>
+              {formatCurrency(totalGeral)}
+            </Text>
+          </View>
+        </View>
+
+        <Button title="Criar Medição" onPress={handleCreateMedicao} />
+      </>
+    ),
+    [
+      isTablet,
+      fontSize,
+      valorBancada,
+      bonusOpen,
+      bonusProducts,
+      handleBonusRowChange,
+      bonusQuantidade,
+      valorMedicao,
+      totalGeral,
+      handleCreateMedicao,
+    ],
+  );
 
   return (
     <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
@@ -282,181 +522,46 @@ export default function CriarMedicaoScreen({ navigation, route }: Props) {
       {/* ================================================ */}
       {/* CONTEÚDO DAS ABAS                               */}
       {/* ================================================ */}
-      <ScrollView contentContainerStyle={{ padding }} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
-        {loading ? <ActivityIndicator /> : null}
-
-        {/* ABA: MEDIÇÃO */}
-        {activeTab === 'medicao' && (
-          <View>
-            <Text style={{ fontSize: fontSize.base, color: '#6B7280', marginBottom: isTablet ? 12 : 8 }}>
-              Produtos vendidos aos clientes finais
-            </Text>
-            {products.map((p) => (
-              <ProductRow
-                key={p.id}
-                product={p}
-                onChange={handleMedicaoRowChange}
-                initialEstoque={p.estoque}
-                initialVendidos={medicaoRows[p.id]?.vendidos ?? 0}
-                initialRepostos={medicaoRows[p.id]?.repostos ?? 0}
-                averageSale3Months={averageSalesByProduct[p.id] ?? 0}
-              />
-            ))}
-
-            {/* Valor Medição */}
-            <View
-              style={{
-                backgroundColor: '#DBEAFE',
-                borderRadius: isTablet ? 12 : 8,
-                padding: isTablet ? 16 : 12,
-                marginTop: isTablet ? 12 : 8,
-                flexDirection: 'row',
-                justifyContent: 'space-between',
-                alignItems: 'center'
-              }}
-            >
-              <Text style={{ fontSize: fontSize.base, fontWeight: '600', color: '#1E40AF' }}>Valor Medição:</Text>
-              <Text style={{ fontSize: fontSize.large, fontWeight: '700', color: '#1E40AF' }}>
-                {formatCurrency(valorMedicao)}
+      {activeTab === 'medicao' ? (
+        <FlatList
+          data={products}
+          keyExtractor={(item) => item.id}
+          renderItem={renderMedicaoItem}
+          ListHeaderComponent={
+            <>
+              {loading ? <ActivityIndicator /> : null}
+              <Text style={{ fontSize: fontSize.base, color: '#6B7280', marginBottom: isTablet ? 12 : 8 }}>
+                Produtos vendidos aos clientes finais
               </Text>
-            </View>
-          </View>
-        )}
-
-        {/* ABA: BANCADA */}
-        {activeTab === 'bancada' && (
-          <View>
-            {PRODUTOS_BANCADA.map((p) => (
-              <BancadaRowComponent
-                key={p.id}
-                product={{ ...p, precoSugestao: p.precoSugestao ?? 0 }}
-                onChange={handleBancadaRowChange}
-              />
-            ))}
-            <View
-              style={{
-                backgroundColor: '#FEE2E2',
-                borderRadius: isTablet ? 12 : 8,
-                padding: isTablet ? 16 : 12,
-                marginTop: isTablet ? 12 : 8,
-                flexDirection: 'row',
-                justifyContent: 'space-between',
-                alignItems: 'center'
-              }}
-            >
-              <Text style={{ fontSize: fontSize.base, fontWeight: '600', color: '#991B1B' }}>Valor Bancada:</Text>
-              <Text style={{ fontSize: fontSize.large, fontWeight: '700', color: '#991B1B' }}>
-                {formatCurrency(valorBancada)}
-              </Text>
-            </View>
-
-            {/* Seção de Bonificação Expandível */}
-            <View style={{ marginTop: isTablet ? 24 : 16 }}>
-              <Pressable
-                onPress={() => setBonusOpen((open) => !open)}
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  backgroundColor: '#D1FAE5',
-                  borderRadius: isTablet ? 12 : 8,
-                  padding: isTablet ? 16 : 12,
-                  marginBottom: isTablet ? 8 : 6
-                }}
-              >
-                <Text style={{ fontSize: fontSize.base, color: '#059669', fontWeight: '700' }}>
-                  Bonificação
-                </Text>
-                <Text style={{ color: '#059669', fontWeight: '700', fontSize: fontSize.base }}>
-                  {bonusOpen ? '▲' : '▼'}
-                </Text>
-              </Pressable>
-              {bonusOpen && (
-                <View>
-                  {PRODUTOS_BANCADA.map((p) => (
-                    <BancadaRowComponent
-                      key={p.id + '-bonus'}
-                      product={{ ...p, id: p.id + '-bonus', precoSugestao: p.precoSugestao ?? 0 }}
-                      onChange={handleBonusRowChange}
-                      hideValues={true}
-                    />
-                  ))}
-                  <View
-                    style={{
-                      backgroundColor: '#D1FAE5',
-                      borderRadius: isTablet ? 12 : 8,
-                      padding: isTablet ? 16 : 12,
-                      marginTop: isTablet ? 12 : 8,
-                      flexDirection: 'row',
-                      justifyContent: 'space-between',
-                      alignItems: 'center'
-                    }}
-                  >
-                    <Text style={{ fontSize: fontSize.base, fontWeight: '600', color: '#059669' }}>
-                      Quantidade Bonificada:
-                    </Text>
-                    <Text style={{ fontSize: fontSize.large, fontWeight: '700', color: '#059669' }}>
-                      {bonusArray.reduce((acc, r) => acc + (r.quantidadeComprada || 0), 0)}
-                    </Text>
-                  </View>
-                </View>
-              )}
-            </View>
-          </View>
-        )}
-
-
-        {/* ================================================ */}
-        {/* TOTAL GERAL                                     */}
-        {/* ================================================ */}
-        <View
-          style={{
-            backgroundColor: '#F9FAFB',
-            borderRadius: isTablet ? 16 : 12,
-            padding: isTablet ? 24 : 16,
-            borderWidth: 1,
-            borderColor: '#E5E7EB',
-            marginTop: isTablet ? 16 : 12,
-            marginBottom: isTablet ? 16 : 12
-          }}
-        >
-          <Text style={{ fontSize: fontSize.base, color: '#6B7280', marginBottom: 4 }}>
-            Medição: {formatCurrency(valorMedicao)}
-          </Text>
-          <Text style={{ fontSize: fontSize.base, color: '#6B7280', marginBottom: 8 }}>
-            Bancada: {formatCurrency(valorBancada)}
-          </Text>
-          {/* Bonificação só aparece se houver produtos bonificados */}
-          {bonusArray.reduce((acc, r) => acc + (r.quantidadeComprada || 0), 0) > 0 && (
-            <Text style={{ fontSize: fontSize.base, color: '#059669', marginBottom: 8 }}>
-              Bonificação: {bonusArray.reduce((acc, r) => acc + (r.quantidadeComprada || 0), 0)} produtos
-            </Text>
-          )}
-          <View style={{ borderTopWidth: 1, borderTopColor: '#E5E7EB', paddingTop: 8 }}>
-            <Text style={{ fontSize: fontSize.large, fontWeight: '600', color: '#111827' }}>Valor Total Geral</Text>
-            <Text style={{ color: '#111827', fontSize: fontSize.xlarge, marginTop: 4, fontWeight: '700' }}>
-              {formatCurrency(totalGeral)}
-            </Text>
-          </View>
-        </View>
-
-        {/* Botão: Criar Medição */}
-        <Button
-          title="Criar Medição"
-          onPress={() =>
-            navigation.navigate('FinalizarMedicao', {
-              clientId: client?.id || '',
-              medicaoRows: medicaoArray,
-              bancadaRows: bancadaArray,
-              bonusRows: bonusArray,
-              valorMedicao,
-              valorBancada,
-              totalGeral,
-              dateTime
-            })
+            </>
           }
+          ListFooterComponent={medicaoFooter}
+          contentContainerStyle={{ padding, paddingBottom: 120 }}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          initialNumToRender={6}
+          maxToRenderPerBatch={6}
+          windowSize={7}
+          updateCellsBatchingPeriod={50}
+          removeClippedSubviews
         />
-      </ScrollView>
+      ) : (
+        <FlatList
+          data={bancadaProducts}
+          keyExtractor={(item) => item.id}
+          renderItem={renderBancadaItem}
+          ListHeaderComponent={loading ? <ActivityIndicator /> : null}
+          ListFooterComponent={bancadaFooter}
+          contentContainerStyle={{ padding, paddingBottom: 120 }}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          initialNumToRender={6}
+          maxToRenderPerBatch={6}
+          windowSize={7}
+          updateCellsBatchingPeriod={50}
+          removeClippedSubviews
+        />
+      )}
       </KeyboardAvoidingView>
     </TouchableWithoutFeedback>
   );

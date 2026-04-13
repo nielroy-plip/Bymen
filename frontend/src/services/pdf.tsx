@@ -491,14 +491,29 @@ export async function generateSalePDF(params: {
     linha: string;
     cap: number;
     preco: number;
+    faixaPrecoAplicada?: 'BASE' | 'QTD_5' | 'QTD_10';
     quantidade: number;
     valorTotal: number;
   }>;
   subtotal: number;
   total: number;
   paymentMethod: 'PIX' | 'DINHEIRO' | 'CARTAO' | 'BOLETO';
+  responsavelVenda?: string;
+  observacoes?: string;
+  pixDiscountPercent?: number;
+  pixDiscountValue?: number;
+  signatureDataUrl?: string;
 }): Promise<string> {
-  const rowsHtml = params.items
+  const getTierLabel = (tier?: 'BASE' | 'QTD_5' | 'QTD_10') => {
+    if (tier === 'QTD_10') return '10+ un';
+    if (tier === 'QTD_5') return '5-9 un';
+    return 'Base';
+  };
+
+  const produtosItems = params.items.filter((item) => !String(item.id || '').startsWith('b'));
+  const bancadaItems = params.items.filter((item) => String(item.id || '').startsWith('b'));
+
+  const produtosRowsHtml = produtosItems
     .filter((item) => Number(item.quantidade || 0) > 0)
     .map(
       (item) =>
@@ -507,11 +522,45 @@ export async function generateSalePDF(params: {
           <td style='padding:8px;border:1px solid #1D4ED8;'>${item.linha}</td>
           <td style='padding:8px;border:1px solid #1D4ED8;text-align:center;'>${item.cap}${getProductUnit(item.nome)}</td>
           <td style='padding:8px;border:1px solid #1D4ED8;text-align:center;'>${item.quantidade}</td>
+          <td style='padding:8px;border:1px solid #1D4ED8;text-align:center;'>${getTierLabel(item.faixaPrecoAplicada)}</td>
           <td style='padding:8px;border:1px solid #1D4ED8;text-align:right;'>${formatCurrency(item.preco)}</td>
           <td style='padding:8px;border:1px solid #1D4ED8;text-align:right;font-weight:700;'>${formatCurrency(item.valorTotal)}</td>
         </tr>`
     )
     .join('');
+
+  const bancadaRowsHtml = bancadaItems
+    .filter((item) => Number(item.quantidade || 0) > 0)
+    .map(
+      (item) =>
+        `<tr>
+          <td style='padding:8px;border:1px solid #991B1B;'>${item.nome}</td>
+          <td style='padding:8px;border:1px solid #991B1B;'>${item.linha}</td>
+          <td style='padding:8px;border:1px solid #991B1B;text-align:center;'>${item.cap}${getProductUnit(item.nome)}</td>
+          <td style='padding:8px;border:1px solid #991B1B;text-align:center;'>${item.quantidade}</td>
+          <td style='padding:8px;border:1px solid #991B1B;text-align:center;'>${getTierLabel(item.faixaPrecoAplicada)}</td>
+          <td style='padding:8px;border:1px solid #991B1B;text-align:right;'>${formatCurrency(item.preco)}</td>
+          <td style='padding:8px;border:1px solid #991B1B;text-align:right;font-weight:700;'>${formatCurrency(item.valorTotal)}</td>
+        </tr>`
+    )
+    .join('');
+
+  const subtotalProdutos = produtosItems.reduce((acc, item) => acc + Number(item.valorTotal || 0), 0);
+  const subtotalBancada = bancadaItems.reduce((acc, item) => acc + Number(item.valorTotal || 0), 0);
+  const tierSummary = params.items.reduce(
+    (acc, item) => {
+      const qty = Number(item.quantidade || 0);
+      if (item.faixaPrecoAplicada === 'QTD_10') {
+        acc.qtd10 += qty;
+      } else if (item.faixaPrecoAplicada === 'QTD_5') {
+        acc.qtd5 += qty;
+      } else {
+        acc.base += qty;
+      }
+      return acc;
+    },
+    { base: 0, qtd5: 0, qtd10: 0 },
+  );
 
   const paymentLabel =
     params.paymentMethod === 'PIX'
@@ -522,7 +571,16 @@ export async function generateSalePDF(params: {
           ? 'Cartao'
           : 'Boleto';
 
-  const pixDiscount = params.paymentMethod === 'PIX' ? params.subtotal - params.total : 0;
+  const pixDiscount = params.paymentMethod === 'PIX'
+    ? Number(params.pixDiscountValue ?? (params.subtotal - params.total))
+    : 0;
+  const pixPercent = params.paymentMethod === 'PIX'
+    ? Number(params.pixDiscountPercent ?? (params.subtotal > 0 ? (pixDiscount / params.subtotal) * 100 : 0))
+    : 0;
+
+  const assinatura = params.signatureDataUrl
+    ? `<img src="${params.signatureDataUrl}" style="width:200px;height:auto;border:1px solid #e5e7eb;" />`
+    : '<div style="color:#9CA3AF">Assinatura não coletada</div>';
 
   const html = `
   <html>
@@ -534,10 +592,11 @@ export async function generateSalePDF(params: {
       <div style="padding:24px">
         <h1 style="margin:0 0 8px 0;color:#1D4ED8">Bymen • Resumo de Venda</h1>
         <p style="margin:0 0 6px 0"><strong>Barbearia:</strong> ${params.clientName}</p>
-        <p style="margin:0 0 20px 0"><strong>Data:</strong> ${params.dateTime}</p>
+        <p style="margin:0 0 6px 0"><strong>Data:</strong> ${params.dateTime}</p>
+        <p style="margin:0 0 20px 0"><strong>Responsável:</strong> ${params.responsavelVenda || '-'}</p>
 
         <div style="padding:16px;background:#EFF6FF;border:2px solid #1D4ED8;border-radius:8px">
-          <h2 style="margin:0 0 12px 0;color:#1E40AF">Itens da venda</h2>
+          <h2 style="margin:0 0 12px 0;color:#1E40AF">Produtos</h2>
           <table style="width:100%;border-collapse:collapse;margin-top:12px;font-size:12px">
             <thead>
               <tr style="background:#DBEAFE">
@@ -545,21 +604,57 @@ export async function generateSalePDF(params: {
                 <th style="padding:8px;border:1px solid #1D4ED8;text-align:left">Linha</th>
                 <th style="padding:8px;border:1px solid #1D4ED8;text-align:center">Cap.</th>
                 <th style="padding:8px;border:1px solid #1D4ED8;text-align:center">Qtd.</th>
+                <th style="padding:8px;border:1px solid #1D4ED8;text-align:center">Faixa</th>
                 <th style="padding:8px;border:1px solid #1D4ED8;text-align:right">Valor Unitario</th>
                 <th style="padding:8px;border:1px solid #1D4ED8;text-align:right">Valor Total</th>
               </tr>
             </thead>
             <tbody>
-              ${rowsHtml}
+              ${produtosRowsHtml || `<tr><td colspan="7" style="padding:10px;border:1px solid #1D4ED8;color:#6B7280">Sem produtos na venda.</td></tr>`}
             </tbody>
           </table>
+          <p style="margin:12px 0 0 0;text-align:right;color:#1E40AF;font-weight:700">Subtotal Produtos: ${formatCurrency(subtotalProdutos)}</p>
+        </div>
+
+        <div style="margin-top:16px;padding:16px;background:#FEF2F2;border:2px solid #991B1B;border-radius:8px">
+          <h2 style="margin:0 0 12px 0;color:#991B1B">Bancada</h2>
+          <table style="width:100%;border-collapse:collapse;margin-top:12px;font-size:12px">
+            <thead>
+              <tr style="background:#FEE2E2">
+                <th style="padding:8px;border:1px solid #991B1B;text-align:left">Produto</th>
+                <th style="padding:8px;border:1px solid #991B1B;text-align:left">Linha</th>
+                <th style="padding:8px;border:1px solid #991B1B;text-align:center">Cap.</th>
+                <th style="padding:8px;border:1px solid #991B1B;text-align:center">Qtd.</th>
+                <th style="padding:8px;border:1px solid #991B1B;text-align:center">Faixa</th>
+                <th style="padding:8px;border:1px solid #991B1B;text-align:right">Valor Unitario</th>
+                <th style="padding:8px;border:1px solid #991B1B;text-align:right">Valor Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${bancadaRowsHtml || `<tr><td colspan="7" style="padding:10px;border:1px solid #991B1B;color:#6B7280">Sem itens de bancada na venda.</td></tr>`}
+            </tbody>
+          </table>
+          <p style="margin:12px 0 0 0;text-align:right;color:#991B1B;font-weight:700">Subtotal Bancada: ${formatCurrency(subtotalBancada)}</p>
         </div>
 
         <div style="margin-top:20px;padding:16px;background:#F9FAFB;border:1px solid #E5E7EB;border-radius:8px">
           <p style="margin:0 0 8px 0"><strong>Forma de pagamento:</strong> ${paymentLabel}</p>
-          <p style="margin:0 0 8px 0"><strong>Subtotal:</strong> ${formatCurrency(params.subtotal)}</p>
-          ${params.paymentMethod === 'PIX' ? `<p style="margin:0 0 8px 0;color:#059669"><strong>Desconto PIX (5%):</strong> -${formatCurrency(pixDiscount)}</p>` : ''}
+          <p style="margin:0 0 8px 0"><strong>Subtotal Produtos:</strong> ${formatCurrency(subtotalProdutos)}</p>
+          <p style="margin:0 0 8px 0"><strong>Subtotal Bancada:</strong> ${formatCurrency(subtotalBancada)}</p>
+          <p style="margin:0 0 8px 0"><strong>Subtotal geral:</strong> ${formatCurrency(params.subtotal)}</p>
+          <p style="margin:0 0 8px 0"><strong>Faixas aplicadas:</strong> Base ${tierSummary.base} un • 5-9 un ${tierSummary.qtd5} un • 10+ un ${tierSummary.qtd10} un</p>
+          ${params.paymentMethod === 'PIX' ? `<p style="margin:0 0 8px 0;color:#059669"><strong>Desconto PIX (${pixPercent.toFixed(2).replace('.', ',')}%):</strong> -${formatCurrency(pixDiscount)}</p>` : ''}
           <p style="margin:0;font-size:20px;font-weight:700;color:#111827"><strong>Total:</strong> ${formatCurrency(params.total)}</p>
+        </div>
+
+        <div style="margin-top:16px;padding:16px;background:#FFFFFF;border:1px solid #E5E7EB;border-radius:8px">
+          <p style="margin:0 0 8px 0"><strong>Observações:</strong></p>
+          <p style="margin:0;color:#374151">${params.observacoes || '-'}</p>
+        </div>
+
+        <div style="margin-top:16px;padding:16px;background:#FFFFFF;border:1px solid #E5E7EB;border-radius:8px">
+          <p style="margin:0 0 12px 0;font-weight:600;color:#111827">Assinatura do responsável:</p>
+          ${assinatura}
         </div>
       </div>
     </body>
@@ -574,14 +669,25 @@ export async function generateReportChartPDF(params: {
   chartTitle: string;
   periodLabel: string;
   dateTime?: string;
+  valueType?: 'currency' | 'quantity';
   points: Array<{ label: string; value: number }>;
 }): Promise<string> {
+  const valueType = params.valueType || 'currency';
+  const formatValue = (value: number) => {
+    if (valueType === 'quantity') {
+      return new Intl.NumberFormat('pt-BR', {
+        maximumFractionDigits: 2,
+      }).format(Number(value || 0));
+    }
+    return formatCurrency(Number(value || 0));
+  };
+
   const rowsHtml = (params.points || [])
     .map(
       (p) =>
         `<tr>
           <td style="padding:8px;border:1px solid #d1d5db">${p.label}</td>
-          <td style="padding:8px;border:1px solid #d1d5db;text-align:right">${formatCurrency(Number(p.value || 0))}</td>
+          <td style="padding:8px;border:1px solid #d1d5db;text-align:right">${formatValue(Number(p.value || 0))}</td>
         </tr>`,
     )
     .join('');
@@ -604,15 +710,15 @@ export async function generateReportChartPDF(params: {
         <p style="margin:0 0 16px 0"><strong>Gerado em:</strong> ${params.dateTime || new Date().toLocaleString('pt-BR')}</p>
 
         <div style="padding:12px;background:#f3f4f6;border:1px solid #e5e7eb;border-radius:8px;margin-bottom:16px">
-          <p style="margin:0 0 6px 0"><strong>Total:</strong> ${formatCurrency(Number(total.toFixed(2)))}</p>
-          <p style="margin:0"><strong>Maior valor:</strong> ${formatCurrency(Number(max.toFixed(2)))}</p>
+          <p style="margin:0 0 6px 0"><strong>Total:</strong> ${formatValue(Number(total.toFixed(2)))}</p>
+          <p style="margin:0"><strong>Maior valor:</strong> ${formatValue(Number(max.toFixed(2)))}</p>
         </div>
 
         <table style="width:100%;border-collapse:collapse;margin-top:8px;font-size:12px">
           <thead>
             <tr style="background:#f9fafb">
               <th style="padding:8px;border:1px solid #d1d5db;text-align:left">Item</th>
-              <th style="padding:8px;border:1px solid #d1d5db;text-align:right">Valor</th>
+              <th style="padding:8px;border:1px solid #d1d5db;text-align:right">${valueType === 'quantity' ? 'Quantidade' : 'Valor'}</th>
             </tr>
           </thead>
           <tbody>

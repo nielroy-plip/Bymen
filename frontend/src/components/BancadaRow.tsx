@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { memo, useEffect, useMemo, useState } from 'react';
 import { View, Text } from 'react-native';
 import Input from './Input';
 import { useResponsive } from '../hooks/useResponsive';
@@ -36,7 +36,7 @@ function parseNumber(v: string) {
   return Number.isFinite(n) ? n : 0;
 }
 
-export default function BancadaRowComponent({ product, onChange, hideValues = false }: Props & { hideValues?: boolean }) {
+function BancadaRowComponent({ product, onChange, hideValues = false }: Props & { hideValues?: boolean }) {
   const [quantidadeComprada, setQuantidadeComprada] = useState('');
 
   const { isTablet, fontSize } = useResponsive();
@@ -121,3 +121,17 @@ export default function BancadaRowComponent({ product, onChange, hideValues = fa
     </View>
   );
 }
+
+export default memo(BancadaRowComponent, (prev, next) => {
+  return (
+    prev.product.id === next.product.id &&
+    prev.product.nome === next.product.nome &&
+    prev.product.linha === next.product.linha &&
+    prev.product.cap === next.product.cap &&
+    prev.product.preco === next.product.preco &&
+    prev.product.precoSugestao === next.product.precoSugestao &&
+    prev.product.estoque === next.product.estoque &&
+    prev.hideValues === next.hideValues &&
+    prev.onChange === next.onChange
+  );
+});

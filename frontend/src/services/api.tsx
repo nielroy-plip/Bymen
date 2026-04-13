@@ -107,6 +107,10 @@ export type SaleItem = {
   linha: string;
   cap: number;
   preco: number;
+  precoBase?: number;
+  preco5?: number;
+  preco10?: number;
+  faixaPrecoAplicada?: 'BASE' | 'QTD_5' | 'QTD_10';
   quantidade: number;
   valorTotal: number;
 };
@@ -117,8 +121,14 @@ export type Sale = {
   clientName: string;
   dateTime: string;
   items: SaleItem[];
+  subtotal?: number;
+  pixDiscountPercent?: number;
+  pixDiscountValue?: number;
   total: number;
   paymentMethod?: 'PIX' | 'DINHEIRO' | 'CARTAO' | 'BOLETO';
+  responsavel?: string;
+  observacoes?: string;
+  signatureDataUrl?: string;
   createdAt: string;
 };
 
@@ -165,6 +175,7 @@ const CLIENT_STOCK_KEY = 'bymen_client_stock';
 const CLIENTS_KEY = 'bymen_clients';
 const SYNC_QUEUE_KEY = 'bymen_sync_queue';
 const CURRENT_USER_KEY = 'bymen_current_user';
+const CUSTOM_PRODUCTS_KEY = 'bymen_custom_products';
 
 const STOCK_REMOTE_REFRESH_INTERVAL_MS = 15000;
 let lastStockRemoteFetchAt = 0;
@@ -270,6 +281,26 @@ async function readClientStock(): Promise<Record<string, Record<string, number>>
 
 async function writeClientStock(stock: Record<string, Record<string, number>>): Promise<void> {
   await AsyncStorage.setItem(CLIENT_STOCK_KEY, JSON.stringify(stock));
+}
+
+async function readCustomProducts(): Promise<Product[]> {
+  const raw = await AsyncStorage.getItem(CUSTOM_PRODUCTS_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as Product[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+async function writeCustomProducts(products: Product[]): Promise<void> {
+  await AsyncStorage.setItem(CUSTOM_PRODUCTS_KEY, JSON.stringify(products));
+}
+
+async function getAllProducts(): Promise<Product[]> {
+  const custom = await readCustomProducts();
+  return [...PRODUCTS, ...PRODUTOS_BANCADA, ...custom];
 }
 
 async function readClients(): Promise<Client[]> {
@@ -614,8 +645,8 @@ export async function deleteClient(clientId: string) {
 
 export async function listProducts() {
   const localStock = await readStock();
-  // Inclui produtos normais e de bancada na listagem
-  const allProducts = [...PRODUCTS, ...PRODUTOS_BANCADA];
+  // Inclui produtos base e personalizados (produto e bancada)
+  const allProducts = await getAllProducts();
 
   const now = Date.now();
   const isInRefreshWindow = now - lastStockRemoteFetchAt < STOCK_REMOTE_REFRESH_INTERVAL_MS;
@@ -670,10 +701,107 @@ export async function listProductsForClient(clientId: string) {
     latestMeasurementStock[row.id] = row.novoEstoque;
   });
 
-  return PRODUCTS.map((p) => ({
+  const allProducts = await getAllProducts();
+  const consignadoProducts = allProducts.filter((p) => !p.id.startsWith('b'));
+
+  return consignadoProducts.map((p) => ({
     ...p,
     estoque: stock[p.id] ?? latestMeasurementStock[p.id] ?? 0,
   }));
+}
+
+export type NewProductPayload = {
+  nome: string;
+  linha: string;
+  cap: number;
+  precoVenda: number;
+  precoConsignado: number;
+  tipo: 'PRODUTO' | 'BANCADA';
+};
+
+export async function createProduct(payload: NewProductPayload): Promise<Product> {
+  const nome = String(payload.nome || '').trim();
+  const linha = String(payload.linha || '').trim();
+  const cap = Number(payload.cap || 0);
+  const precoVenda = Number(payload.precoVenda || 0);
+  const precoConsignado = Number(payload.precoConsignado || 0);
+  const tipo = payload.tipo === 'BANCADA' ? 'BANCADA' : 'PRODUTO';
+
+  if (!nome || !linha || cap <= 0 || precoVenda <= 0 || precoConsignado <= 0) {
+    throw new Error('Dados do produto inválidos. Preencha nome, linha, capacidade e valores maiores que zero.');
+  }
+
+  const allProducts = await getAllProducts();
+  const duplicate = allProducts.find(
+    (item) =>
+      item.nome.trim().toLowerCase() === nome.toLowerCase() &&
+      item.linha.trim().toLowerCase() === linha.toLowerCase() &&
+      Number(item.cap) === cap &&
+      (item.id.startsWith('b') ? 'BANCADA' : 'PRODUTO') === tipo,
+  );
+
+  if (duplicate) {
+    throw new Error('Já existe um produto com esse nome, linha, capacidade e tipo.');
+  }
+
+  const idPrefix = tipo === 'BANCADA' ? 'b' : 'p';
+  const id = `${idPrefix}c${Date.now().toString(36)}${Math.floor(Math.random() * 1000).toString(36)}`;
+
+  const nextProduct: Product = {
+    id,
+    nome,
+    linha,
+    cap,
+    // Mantém compatibilidade dos fluxos existentes:
+    // preco = consignado | precoSugestao = venda
+    preco: precoConsignado,
+    precoSugestao: precoVenda,
+    estoque: 0,
+  };
+
+  const custom = await readCustomProducts();
+  custom.push(nextProduct);
+  await writeCustomProducts(custom);
+
+  const stock = await readStock();
+  if (typeof stock[id] !== 'number') {
+    stock[id] = 0;
+    await writeStock(stock);
+  }
+
+  return nextProduct;
+}
+
+export async function deleteProduct(productId: string): Promise<void> {
+  const custom = await readCustomProducts();
+  const existsInCustom = custom.some((item) => item.id === productId);
+
+  if (!existsInCustom) {
+    throw new Error('Apenas produtos personalizados podem ser excluídos.');
+  }
+
+  const nextCustom = custom.filter((item) => item.id !== productId);
+  await writeCustomProducts(nextCustom);
+
+  const stock = await readStock();
+  if (Object.prototype.hasOwnProperty.call(stock, productId)) {
+    delete stock[productId];
+    await writeStock(stock);
+  }
+
+  const clientStock = await readClientStock();
+  let changed = false;
+
+  Object.keys(clientStock).forEach((clientId) => {
+    if (Object.prototype.hasOwnProperty.call(clientStock[clientId], productId)) {
+      delete clientStock[clientId][productId];
+      changed = true;
+    }
+  });
+
+  if (changed) {
+    await writeClientStock(clientStock);
+  }
 }
 
 async function getCurrentDistributorBalance(productId: string, localStock: Record<string, number>) {
@@ -717,8 +845,7 @@ export async function addClientInitialStock(
 
 export async function addProductStock(productId: string, quantity: number) {
   const stock = await readStock();
-  // Busca em ambos os arrays para garantir produto encontrado
-  const allProducts = [...PRODUCTS, ...PRODUTOS_BANCADA];
+  const allProducts = await getAllProducts();
   const current = await getCurrentDistributorBalance(productId, stock);
   stock[productId] = current + quantity;
   await writeStock(stock);
@@ -742,7 +869,7 @@ export async function addProductStock(productId: string, quantity: number) {
 
 export async function removeProductStock(productId: string, quantity: number): Promise<boolean> {
   const stock = await readStock();
-  const allProducts = [...PRODUCTS, ...PRODUTOS_BANCADA];
+  const allProducts = await getAllProducts();
   const current = await getCurrentDistributorBalance(productId, stock);
   if (current >= quantity) {
     stock[productId] = current - quantity;

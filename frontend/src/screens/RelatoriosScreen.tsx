@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { View, Text, ScrollView, Modal, TouchableOpacity, ActivityIndicator, useWindowDimensions, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { BarChart } from 'react-native-chart-kit';
 import { listClients, listMeasurements, listProducts, listSales, Measurement, Sale } from '../services/api';
 import { Client } from '../data/clients';
 import { generateReportChartPDF } from '../services/pdf';
@@ -169,16 +168,21 @@ export default function RelatoriosScreen() {
     });
   }, [measurements, barbeariaId, monthWindow]);
 
-  const vendasPorMesFiltrado = {
-    labels: salesData.labels,
-    datasets: [
-      {
-        data: salesData.data,
-        color: (opacity = 1) => `rgba(59, 130, 246, ${opacity})`,
-        strokeWidth: 2
-      }
-    ],
-  };
+  const monthlySalesBars = useMemo(() => {
+    const maxValue = Math.max(...salesData.data, 1);
+
+    return salesData.labels.map((label, index) => {
+      const value = Number(salesData.data[index] || 0);
+      const ratio = value / maxValue;
+      const widthPercent = Math.max(ratio * 100, value > 0 ? 10 : 2);
+
+      return {
+        label,
+        value,
+        widthPercent,
+      };
+    });
+  }, [salesData]);
 
   const produtosData = useMemo(() => {
     const grouped = new Map<string, { label: string; linha: string; total: number }>();
@@ -315,8 +319,6 @@ export default function RelatoriosScreen() {
     }));
   }, [sales, barbeariaId, monthWindow, produtoFiltroBancada]);
 
-  const vendasChartWidth = Math.max(screenWidth - (isSmallScreen ? 16 : 48), salesData.labels.length * (isSmallScreen ? 70 : 84));
-
   const periodLabel = useMemo(() => {
     const selected = periodos.find((p) => p.value === periodo);
     return selected?.label || 'Período customizado';
@@ -325,12 +327,14 @@ export default function RelatoriosScreen() {
   async function handleExportChart(
     chartTitle: string,
     points: Array<{ label: string; value: number }>,
+    valueType: 'currency' | 'quantity' = 'currency',
   ) {
     try {
       const uri = await generateReportChartPDF({
         clientName: selectedBarbearia?.nome || 'Barbearia',
         chartTitle,
         periodLabel,
+        valueType,
         points,
       });
       await sharePdf(uri);
@@ -504,6 +508,7 @@ export default function RelatoriosScreen() {
                   label,
                   value: Number(salesData.data[index] || 0),
                 })),
+                'currency',
               )
             }
           >
@@ -529,37 +534,31 @@ export default function RelatoriosScreen() {
             </TouchableOpacity>
           ))}
         </View>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-          <BarChart
-            data={vendasPorMesFiltrado}
-            width={vendasChartWidth}
-            height={isSmallScreen ? 200 : 230}
-            yAxisLabel={'R$ '}
-            yAxisSuffix={''}
-            fromZero
-            showValuesOnTopOfBars={false}
-            withInnerLines
-            chartConfig={{
-              backgroundColor: '#F0F9FF',
-              backgroundGradientFrom: '#F0F9FF',
-              backgroundGradientTo: '#F0F9FF',
-              decimalPlaces: 2,
-              color: (opacity = 1) => `rgba(59, 130, 246, ${opacity})`,
-              labelColor: (opacity = 1) => `rgba(30, 64, 175, ${opacity})`,
-              formatYLabel: (value) => formatCurrency(Number(value || 0)).replace('R$', ''),
-              style: { borderRadius: 16 },
-              propsForBackgroundLines: {
-                strokeDasharray: '',
-              },
-            }}
-            style={{ borderRadius: 16 }}
-          />
-        </ScrollView>
-        <View style={{ marginTop: 10 }}>
-          {salesData.labels.map((label, index) => (
-            <View key={`money-${label}-${index}`} style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
-              <Text style={{ color: '#1E3A8A', fontSize: 12 }}>{label}</Text>
-              <Text style={{ color: '#1E3A8A', fontSize: 12, fontWeight: '700' }}>{formatCurrency(Number(salesData.data[index] || 0))}</Text>
+        <View style={{ marginTop: 2 }}>
+          {monthlySalesBars.map((item, index) => (
+            <View key={`sales-bar-${item.label}-${index}`} style={{ marginBottom: 10 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
+                <Text style={{ color: '#1E3A8A', fontSize: 12, fontWeight: '700', width: 34 }}>
+                  {item.label}
+                </Text>
+                <View style={{ flex: 1, height: 28, borderRadius: 8, backgroundColor: '#DBEAFE', overflow: 'hidden' }}>
+                  <View
+                    style={{
+                      width: `${item.widthPercent}%`,
+                      height: '100%',
+                      backgroundColor: '#2563EB',
+                      borderRadius: 8,
+                      justifyContent: 'center',
+                      alignItems: 'flex-end',
+                      paddingHorizontal: 8,
+                    }}
+                  >
+                    <Text style={{ color: '#FFFFFF', fontSize: 11, fontWeight: '700' }} numberOfLines={1}>
+                      {formatCurrency(item.value)}
+                    </Text>
+                  </View>
+                </View>
+              </View>
             </View>
           ))}
         </View>
@@ -601,6 +600,7 @@ export default function RelatoriosScreen() {
                   label: item.label,
                   value: Number(item.total || 0),
                 })),
+                'quantity',
               )
             }
           >
@@ -653,6 +653,7 @@ export default function RelatoriosScreen() {
                   label: item.label,
                   value: Number(item.total || 0),
                 })),
+                'quantity',
               )
             }
           >

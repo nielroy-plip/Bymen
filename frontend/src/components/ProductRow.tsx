@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { memo, useEffect, useMemo, useState } from 'react';
 import { View, Text, TextInput, StyleSheet } from 'react-native';
 
 const styles = StyleSheet.create({
@@ -44,6 +44,8 @@ export type Product = {
   linha: string;
   cap: number;
   preco: number;
+  preco5?: number;
+  preco10?: number;
   precoSugestao?: number;
   estoque: number;
 };
@@ -66,14 +68,7 @@ function parseNumber(v: string) {
   return Number.isFinite(n) ? n : 0;
 }
 
-function computeRow(ea: number, v: number, r: number) {
-  const novoEstoque = ea - v + r;
-  const diferenca = ea - v; // Produtos não vendidos = Estoque - Vendidos
-  return { novoEstoque, diferenca };
-}
-
-
-export default function ProductRow({
+function ProductRowComponent({
   product,
   onChange,
   isStockOnly = false,
@@ -94,17 +89,7 @@ export default function ProductRow({
     setEstoqueAtual(String(initialEstoque ?? product.estoque ?? 0));
     setVendidos(String(initialVendidos ?? 0));
     setRepostos(String(initialRepostos ?? 0));
-  }, [product.id, product.estoque, initialEstoque, initialVendidos, initialRepostos]);
-
-  // Sempre que qualquer campo relevante mudar, se produtosRetiradosManual estiver ativo, força atualização do novo estoque
-  React.useEffect(() => {
-    if (produtosRetiradosManual && produtosRetirados !== '') {
-      // Força atualização do novo estoque ao mudar qualquer campo
-      // (setState redundante, mas força re-render e atualização do cálculo)
-      setProdutosRetirados(p => p);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [estoqueAtual, vendidos, repostos]);
+  }, [product.id]);
 
   // Calculation logic:
   // Novo Estoque Final = estoqueAtual - vendidos + repostos
@@ -148,7 +133,16 @@ export default function ProductRow({
       valorMedicao: numbers.valorMedicao,
       produtosRetirados: numbers.produtosRetirados
     });
-  }, [numbers, product, onChange]);
+  }, [
+    numbers,
+    onChange,
+    product.id,
+    product.nome,
+    product.linha,
+    product.cap,
+    product.preco,
+    product.precoSugestao,
+  ]);
 
   const { isTablet, fontSize } = useResponsive();
 
@@ -292,3 +286,22 @@ export default function ProductRow({
     </View>
   );
 }
+
+export default memo(ProductRowComponent, (prev, next) => {
+  return (
+    prev.product.id === next.product.id &&
+    prev.product.nome === next.product.nome &&
+    prev.product.linha === next.product.linha &&
+    prev.product.cap === next.product.cap &&
+    prev.product.preco === next.product.preco &&
+    prev.product.precoSugestao === next.product.precoSugestao &&
+    prev.product.estoque === next.product.estoque &&
+    prev.isStockOnly === next.isStockOnly &&
+    prev.initialEstoque === next.initialEstoque &&
+    prev.initialVendidos === next.initialVendidos &&
+    prev.initialRepostos === next.initialRepostos &&
+    prev.showSugestao === next.showSugestao &&
+    prev.averageSale3Months === next.averageSale3Months &&
+    prev.onChange === next.onChange
+  );
+});

@@ -39,6 +39,10 @@ export type RootStackParamList = {
       linha: string;
       cap: number;
       preco: number;
+      precoBase?: number;
+      preco5?: number;
+      preco10?: number;
+      faixaPrecoAplicada?: 'BASE' | 'QTD_5' | 'QTD_10';
       quantidade: number;
       valorTotal: number;
     }>;
@@ -96,6 +100,7 @@ export default function Routes() {
       screenOptions={{
         headerBackTitle: 'Login', // texto do botão de voltar (opcional)
         gestureEnabled: true, // permite gestos
+        freezeOnBlur: true,
       }}
     >
       <Stack.Screen

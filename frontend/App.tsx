@@ -3,8 +3,12 @@ import React, { useEffect } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { enableFreeze, enableScreens } from 'react-native-screens';
 import Routes from './src/routes';
 import { setupNotifications } from './src/services/notifications';
+
+enableScreens(true);
+enableFreeze(true);
 
 export default function App() {
   useEffect(() => {

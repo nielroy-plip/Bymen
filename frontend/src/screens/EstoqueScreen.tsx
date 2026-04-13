@@ -1,15 +1,13 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, ScrollView, Alert, Pressable, KeyboardAvoidingView, Platform, Keyboard, TouchableWithoutFeedback, NativeSyntheticEvent, TextInputFocusEventData } from 'react-native';
+import { View, Text, ScrollView, Alert, Pressable, KeyboardAvoidingView, Platform, Keyboard, TouchableWithoutFeedback } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
 import { RootStackParamList } from '../routes';
 import Button from '../components/Button';
 import Input from '../components/Input';
 import Card from '../components/Card';
-import { listProducts, addProductStock, removeProductStock } from '../services/api';
+import { listProducts, addProductStock, removeProductStock, createProduct, deleteProduct } from '../services/api';
 import { Product } from '../components/ProductRow';
-import { PRODUTOS_BANCADA } from '../data/products';
-import BancadaRowComponent from '../components/BancadaRow';
 import { Ionicons } from '@expo/vector-icons';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { getProductUnit } from '../utils/product';
@@ -23,6 +21,15 @@ export default function EstoqueScreen({}: Props) {
   const [activeTab, setActiveTab] = useState<'produtos' | 'bancada'>('produtos');
   const [bancadaQuantities, setBancadaQuantities] = useState<Record<string, string>>({});
   const [showCriticalDetails, setShowCriticalDetails] = useState(false);
+  const [showNewProductForm, setShowNewProductForm] = useState(false);
+  const [newProductName, setNewProductName] = useState('');
+  const [newProductLine, setNewProductLine] = useState('');
+  const [newProductCap, setNewProductCap] = useState('');
+  const [newProductSalePrice, setNewProductSalePrice] = useState('');
+  const [newProductConsignedPrice, setNewProductConsignedPrice] = useState('');
+  const [newProductAsProduto, setNewProductAsProduto] = useState(true);
+  const [newProductAsBancada, setNewProductAsBancada] = useState(false);
+  const [isCreatingProduct, setIsCreatingProduct] = useState(false);
   const criticalItems = useMemo(
     () => products.filter((item) => (item.estoque ?? 0) <= 10).map((item) => ({
       id: item.id,
@@ -41,7 +48,7 @@ export default function EstoqueScreen({}: Props) {
     [criticalItems]
   );
 
-  function handleFieldFocus(event: NativeSyntheticEvent<TextInputFocusEventData>) {
+  function handleFieldFocus(event: any) {
     const target = event.nativeEvent.target;
     setTimeout(() => {
       (scrollRef.current as any)?.scrollResponderScrollNativeHandleToKeyboard(target, 120, true);
@@ -92,17 +99,29 @@ export default function EstoqueScreen({}: Props) {
   useFocusEffect(
     React.useCallback(() => {
       loadProducts();
-      const timer = setInterval(() => {
-        loadProducts();
-      }, 5000);
-
-      return () => clearInterval(timer);
+      return undefined;
     }, [])
   );
 
+  function sortProductsByDisplayOrder(list: Product[]) {
+    return [...list].sort((a, b) => {
+      const lineComparison = String(a.linha || '').localeCompare(String(b.linha || ''), 'pt-BR', {
+        sensitivity: 'base',
+      });
+      if (lineComparison !== 0) return lineComparison;
+
+      const nameComparison = String(a.nome || '').localeCompare(String(b.nome || ''), 'pt-BR', {
+        sensitivity: 'base',
+      });
+      if (nameComparison !== 0) return nameComparison;
+
+      return Number(a.cap || 0) - Number(b.cap || 0);
+    });
+  }
+
   async function loadProducts() {
     const prods = await listProducts();
-    setProducts(prods);
+    setProducts(sortProductsByDisplayOrder(prods));
   }
 
   async function handleEntry(productId: string) {
@@ -139,6 +158,127 @@ export default function EstoqueScreen({}: Props) {
     } catch {
       Alert.alert('Erro', 'Falha ao registrar saída no Supabase (homologação).');
     }
+  }
+
+  function parseCurrencyInput(value: string) {
+    const normalized = String(value || '').replace(',', '.').replace(/[^\d.]/g, '');
+    return Number(normalized || 0);
+  }
+
+  function formatCurrencyInput(value: string) {
+    return value.replace(/[^\d,.]/g, '');
+  }
+
+  function clearNewProductForm() {
+    setNewProductName('');
+    setNewProductLine('');
+    setNewProductCap('');
+    setNewProductSalePrice('');
+    setNewProductConsignedPrice('');
+    setNewProductAsProduto(true);
+    setNewProductAsBancada(false);
+  }
+
+  function toggleNewProductTarget(target: 'PRODUTO' | 'BANCADA') {
+    if (target === 'PRODUTO') {
+      const next = !newProductAsProduto;
+      if (!next && !newProductAsBancada) {
+        return;
+      }
+      setNewProductAsProduto(next);
+      return;
+    }
+
+    const next = !newProductAsBancada;
+    if (!next && !newProductAsProduto) {
+      return;
+    }
+    setNewProductAsBancada(next);
+  }
+
+  async function handleCreateProduct() {
+    const cap = Number(newProductCap.replace(/\D/g, ''));
+    const precoVenda = parseCurrencyInput(newProductSalePrice);
+    const precoConsignado = parseCurrencyInput(newProductConsignedPrice);
+    const selectedTypes: Array<'PRODUTO' | 'BANCADA'> = [];
+
+    if (newProductAsProduto) selectedTypes.push('PRODUTO');
+    if (newProductAsBancada) selectedTypes.push('BANCADA');
+
+    if (!newProductName.trim() || !newProductLine.trim() || cap <= 0 || precoVenda <= 0 || precoConsignado <= 0) {
+      Alert.alert(
+        'Campos obrigatórios',
+        'Preencha nome, linha, capacidade e valores maiores que zero para cadastrar o produto.',
+      );
+      return;
+    }
+
+    if (selectedTypes.length === 0) {
+      Alert.alert('Campos obrigatórios', 'Selecione ao menos um tipo: Produto, Bancada ou ambos.');
+      return;
+    }
+
+    setIsCreatingProduct(true);
+    try {
+      for (const tipo of selectedTypes) {
+        await createProduct({
+          nome: newProductName,
+          linha: newProductLine,
+          cap,
+          precoVenda,
+          precoConsignado,
+          tipo,
+        });
+      }
+
+      await loadProducts();
+      setActiveTab(selectedTypes.includes('PRODUTO') ? 'produtos' : 'bancada');
+      clearNewProductForm();
+      setShowNewProductForm(false);
+      Alert.alert(
+        'Sucesso',
+        selectedTypes.length === 2
+          ? 'Produto cadastrado em Produto e Bancada com a mesma linha/modelo.'
+          : 'Produto cadastrado com sucesso.',
+      );
+    } catch (error) {
+      Alert.alert('Erro', (error as Error)?.message || 'Falha ao cadastrar produto.');
+    } finally {
+      setIsCreatingProduct(false);
+    }
+  }
+
+  async function handleDeleteProduct(product: Product) {
+    Alert.alert(
+      'Excluir produto',
+      `Deseja excluir "${product.nome}" da linha ${product.linha}?`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Excluir',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await deleteProduct(product.id);
+              setQuantities((prev) => {
+                const next = { ...prev };
+                delete next[product.id];
+                return next;
+              });
+              setBancadaQuantities((prev) => {
+                const next = { ...prev };
+                delete next[product.id];
+                return next;
+              });
+              await loadProducts();
+              Alert.alert('Sucesso', 'Produto excluído com sucesso.');
+            } catch (error) {
+              Alert.alert('Não foi possível excluir', (error as Error)?.message || 'Falha ao excluir produto.');
+            }
+          },
+        },
+      ],
+    );
   }
 
   return (
@@ -194,6 +334,105 @@ export default function EstoqueScreen({}: Props) {
 
         <Card>
           <Pressable
+            onPress={() => setShowNewProductForm((prev) => !prev)}
+            style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: showNewProductForm ? 12 : 0 }}
+          >
+            <Text style={{ fontSize: 16, fontWeight: '700', color: '#111827' }}>
+              Cadastrar novo produto
+            </Text>
+            <Text style={{ color: '#1D4ED8', fontWeight: '700' }}>
+              {showNewProductForm ? 'Fechar' : 'Abrir'}
+            </Text>
+          </Pressable>
+
+          {showNewProductForm && (
+            <>
+              <Input
+                label="Nome do produto"
+                value={newProductName}
+                onChangeText={setNewProductName}
+                placeholder="Ex.: Shampoo"
+              />
+
+              <Input
+                label="Linha"
+                value={newProductLine}
+                onChangeText={setNewProductLine}
+                placeholder="Ex.: Wood, Ocean"
+              />
+
+              <Input
+                label="Capacidade (ml ou g)"
+                value={newProductCap}
+                onChangeText={(text) => setNewProductCap(text.replace(/\D/g, ''))}
+                keyboardType="numeric"
+                placeholder="Ex.: 240"
+              />
+
+              <Input
+                label="Valor de venda"
+                value={newProductSalePrice}
+                onChangeText={(text) => setNewProductSalePrice(formatCurrencyInput(text))}
+                keyboardType="decimal-pad"
+                placeholder="Ex.: 65,00"
+              />
+
+              <Input
+                label="Valor no consignado"
+                value={newProductConsignedPrice}
+                onChangeText={(text) => setNewProductConsignedPrice(formatCurrencyInput(text))}
+                keyboardType="decimal-pad"
+                placeholder="Ex.: 42,00"
+              />
+
+              <Text style={{ color: '#374151', fontWeight: '600', marginBottom: 8 }}>Tipo</Text>
+              <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
+                <Pressable
+                  onPress={() => toggleNewProductTarget('PRODUTO')}
+                  style={{
+                    flex: 1,
+                    paddingVertical: 10,
+                    borderRadius: 8,
+                    borderWidth: 1,
+                    borderColor: newProductAsProduto ? '#2563EB' : '#D1D5DB',
+                    backgroundColor: newProductAsProduto ? '#EFF6FF' : '#FFFFFF',
+                    alignItems: 'center',
+                  }}
+                >
+                  <Text style={{ color: '#1D4ED8', fontWeight: '700' }}>Produto</Text>
+                </Pressable>
+
+                <Pressable
+                  onPress={() => toggleNewProductTarget('BANCADA')}
+                  style={{
+                    flex: 1,
+                    paddingVertical: 10,
+                    borderRadius: 8,
+                    borderWidth: 1,
+                    borderColor: newProductAsBancada ? '#B91C1C' : '#D1D5DB',
+                    backgroundColor: newProductAsBancada ? '#FEF2F2' : '#FFFFFF',
+                    alignItems: 'center',
+                  }}
+                >
+                  <Text style={{ color: '#991B1B', fontWeight: '700' }}>Bancada</Text>
+                </Pressable>
+              </View>
+
+              <Text style={{ color: '#6B7280', marginBottom: 10 }}>
+                Dica: selecione os dois para cadastrar o mesmo produto em Produto e Bancada.
+              </Text>
+
+              <Button
+                title={isCreatingProduct ? 'Cadastrando...' : 'Salvar novo produto'}
+                onPress={handleCreateProduct}
+                disabled={isCreatingProduct}
+              />
+            </>
+          )}
+        </Card>
+
+        <Card>
+          <Pressable
             onPress={() => setShowCriticalDetails((prev) => !prev)}
             style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}
           >
@@ -240,7 +479,12 @@ export default function EstoqueScreen({}: Props) {
           products.filter(p => !p.id.startsWith('b')).map((p) => (
             <View key={p.id} style={{ marginBottom: 16 }}>
               <Card>
-                <Text style={{ fontSize: 18, fontWeight: '600', color: '#111827' }}>{p.nome}</Text>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Text style={{ fontSize: 18, fontWeight: '600', color: '#111827', flex: 1, marginRight: 12 }}>{p.nome}</Text>
+                  <Pressable onPress={() => handleDeleteProduct(p)}>
+                    <Text style={{ color: '#DC2626', fontWeight: '700' }}>Excluir</Text>
+                  </Pressable>
+                </View>
                 <Text style={{ color: '#6B7280' }}>Linha: {p.linha}</Text>
                 <Text style={{ color: '#6B7280' }}>Estoque Atual: {p.estoque}</Text>
                 <View style={{ marginTop: 12 }}>
@@ -265,7 +509,12 @@ export default function EstoqueScreen({}: Props) {
           products.filter(p => p.id.startsWith('b')).map((p) => (
             <View key={p.id} style={{ marginBottom: 16 }}>
               <Card>
-                <Text style={{ fontSize: 18, fontWeight: '600', color: '#111827' }}>{p.nome}</Text>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Text style={{ fontSize: 18, fontWeight: '600', color: '#111827', flex: 1, marginRight: 12 }}>{p.nome}</Text>
+                  <Pressable onPress={() => handleDeleteProduct(p)}>
+                    <Text style={{ color: '#DC2626', fontWeight: '700' }}>Excluir</Text>
+                  </Pressable>
+                </View>
                 <Text style={{ color: '#6B7280' }}>Linha: {p.linha}</Text>
                 <Text style={{ color: '#6B7280' }}>Capacidade: {p.cap}{getProductUnit(p.nome)}</Text>
                 <Text style={{ color: '#6B7280' }}>Estoque Atual: {p.estoque}</Text>

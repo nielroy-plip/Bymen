@@ -70,8 +70,18 @@ export default function DashboardScreen({ navigation }: Props) {
       return acc + Number(item.total || 0);
     }, 0);
 
+    const monthSalesCount = sales.reduce((acc, item) => {
+      const [datePart] = String(item.dateTime || '').split(' ');
+      const [day, month, year] = (datePart || '').split('/');
+      if (!month || !year) return acc;
+      if (Number(month) !== thisMonth || Number(year) !== thisYear) return acc;
+      return acc + 1;
+    }, 0);
+
     return {
-      monthCount: monthMeasurements.length,
+      monthCount: monthMeasurements.length + monthSalesCount,
+      monthMeasurementCount: monthMeasurements.length,
+      monthSalesCount,
       monthTotal: totalValue + monthSalesTotal,
       monthTotalMedicao: totalMedicao,
       monthTotalBancada: totalBancada,
@@ -136,8 +146,14 @@ export default function DashboardScreen({ navigation }: Props) {
 
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', marginBottom: 16 }}>
           <View style={{ width: '48%', backgroundColor: '#EFF6FF', borderColor: '#DBEAFE', borderWidth: 1, borderRadius: 12, padding: 10, marginBottom: 10 }}>
-            <Text style={{ color: '#1E40AF', fontSize: 12, fontWeight: '600' }}>Medições no mês</Text>
+            <Text style={{ color: '#1E40AF', fontSize: 12, fontWeight: '600' }}>Operações no mês</Text>
             <Text style={{ color: '#111827', fontSize: 20, fontWeight: '700', marginTop: 4 }}>{kpis.monthCount}</Text>
+            <Text style={{ color: '#1E40AF', fontSize: 11, marginTop: 2 }}>
+              Medições: {kpis.monthMeasurementCount}
+            </Text>
+            <Text style={{ color: '#2563EB', fontSize: 11, marginTop: 2 }}>
+              Vendas: {kpis.monthSalesCount}
+            </Text>
           </View>
           <View style={{ width: '48%', backgroundColor: '#F0FDF4', borderColor: '#DCFCE7', borderWidth: 1, borderRadius: 12, padding: 10, marginBottom: 10 }}>
             <Text style={{ color: '#166534', fontSize: 12, fontWeight: '600' }}>Valor do mês</Text>
