@@ -9,6 +9,7 @@ import { listMeasurements, listClients, listSales, deleteClient } from '../servi
 import { formatCurrency, formatDateTime } from '../utils/format';
 import { sum } from '../utils/calculate';
 import { Ionicons } from '@expo/vector-icons';
+import BymenLoader from '../components/BymenLoader';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ClienteDetalhes'>;
 
@@ -29,6 +30,7 @@ export default function ClienteDetalhesScreen({ navigation, route }: Props) {
       bancadaRows: any[];
       valorMedicao: number;
       valorBancada: number;
+      paymentMethod?: string;
       responsavel?: string;
       signatureDataUrl?: string;
     }>
@@ -65,10 +67,23 @@ export default function ClienteDetalhesScreen({ navigation, route }: Props) {
       bancadaRows: it.bancadaRows || [],
       valorMedicao: it.valorMedicao || 0,
       valorBancada: it.valorBancada || 0,
+      paymentMethod: it.paymentMethod,
       responsavel: it.responsavel,
       signatureDataUrl: it.signatureDataUrl,
     }));
     setMedicoes(mapped);
+  }
+
+  function getPaymentLabel(method?: string) {
+    if (method === 'PIX') return 'PIX';
+    if (method === 'DINHEIRO') return 'Dinheiro';
+    if (method === 'CARTAO') return 'Cartão';
+    if (method === 'BOLETO') return 'Boleto';
+    return method || 'Não informado';
+  }
+
+  function hasCashDiscount(method?: string) {
+    return method === 'PIX' || method === 'DINHEIRO';
   }
 
   async function loadSalesData() {
@@ -114,11 +129,7 @@ export default function ClienteDetalhesScreen({ navigation, route }: Props) {
   }, [navigation, clientId]);
 
   if (!client) {
-    return (
-      <View style={{ flex: 1, backgroundColor: '#FFFFFF', padding: 24 }}>
-        <Text style={{ color: '#111827' }}>Carregando...</Text>
-      </View>
-    );
+    return <BymenLoader fullScreen label="Carregando cliente..." />;
   }
 
   return (
@@ -197,9 +208,13 @@ export default function ClienteDetalhesScreen({ navigation, route }: Props) {
         <Card>
           <Text style={{ fontSize: 18, fontWeight: '600', color: '#111827' }}>Dados</Text>
           <Text style={{ color: '#6B7280', marginTop: 4 }}>CNPJ/CPF: {client.cnpjCpf}</Text>
-          <Text style={{ color: '#6B7280' }}>Endereço: {client.endereco}</Text>
+          <Text style={{ color: '#6B7280' }}>
+            Endereço: {client.endereco}{client.numero ? `, ${client.numero}` : ''}
+          </Text>
+          {!!client.complemento && <Text style={{ color: '#6B7280' }}>Complemento: {client.complemento}</Text>}
           <Text style={{ color: '#6B7280' }}>Responsável: {client.responsavel}</Text>
           <Text style={{ color: '#6B7280' }}>Telefone: {client.telefone.replace(/^\+\d{2}\s?/, '')}</Text>
+          {!!client.email && <Text style={{ color: '#6B7280' }}>E-mail: {client.email}</Text>}
         </Card>
         <Card>
           {client.operationMode === 'VENDA' ? (
@@ -217,7 +232,12 @@ export default function ClienteDetalhesScreen({ navigation, route }: Props) {
                   <Text style={{ color: '#6B7280' }}>{formatCurrency(v.total).replace('.', ',')} • {v.rowsCount} itens</Text>
                   {!!v.paymentMethod && (
                     <Text style={{ color: '#6B7280', fontSize: 12, marginTop: 4 }}>
-                      Pagamento: {v.paymentMethod}
+                      Pagamento: {getPaymentLabel(v.paymentMethod)}
+                    </Text>
+                  )}
+                  {hasCashDiscount(v.paymentMethod) && (
+                    <Text style={{ color: '#059669', fontSize: 12, marginTop: 2 }}>
+                      Desconto à vista 5% aplicado
                     </Text>
                   )}
                 </View>
@@ -244,6 +264,16 @@ export default function ClienteDetalhesScreen({ navigation, route }: Props) {
                       • {m.syncStatus === 'SYNCED' ? 'Sincronizada' : m.syncStatus === 'FAILED' ? 'Falhou' : 'Pendente'}
                     </Text>
                   </View>
+                  {!!m.paymentMethod && (
+                    <Text style={{ color: '#6B7280', fontSize: 12, marginTop: 4 }}>
+                      Pagamento: {getPaymentLabel(m.paymentMethod)}
+                    </Text>
+                  )}
+                  {hasCashDiscount(m.paymentMethod) && (
+                    <Text style={{ color: '#059669', fontSize: 12, marginTop: 2 }}>
+                      Desconto à vista 5% aplicado
+                    </Text>
+                  )}
                   {!!m.lastEventMessage && <Text style={{ color: '#6B7280', fontSize: 12 }}>{m.lastEventMessage}</Text>}
                   <Text
                     style={{ color: '#3B82F6', marginTop: 2, fontSize: 13 }}
@@ -255,6 +285,7 @@ export default function ClienteDetalhesScreen({ navigation, route }: Props) {
                       valorBancada: m.valorBancada,
                       totalGeral: m.total,
                       dateTime: m.dateTime,
+                      paymentMethod: m.paymentMethod,
                       responsavel: m.responsavel,
                       signatureDataUrl: m.signatureDataUrl,
                     })}

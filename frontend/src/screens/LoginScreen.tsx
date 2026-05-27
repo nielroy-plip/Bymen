@@ -39,7 +39,9 @@ export default function LoginScreen({ navigation }: Props) {
       setErro('');
       navigation.replace('Dashboard');
     } catch (error) {
-      setErro((error as Error)?.message || 'Credenciais inválidas ou indisponibilidade do servidor');
+      const msg = (error as Error)?.message || 'Credenciais inválidas ou indisponibilidade do servidor';
+      console.error('[LOGIN ERROR]', msg);
+      setErro(msg);
     }
   }
 
@@ -76,7 +78,7 @@ export default function LoginScreen({ navigation }: Props) {
     }
 
     try {
-      await registerUser({ email, password, username, phone });
+      await registerUser({ email, password, username, phone, role: 'VENDEDOR' });
       setCadastroOpen(false);
       setEmailCadastro('');
       setUsuarioCadastro('');

@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { View, Text } from 'react-native';
 import Input from './Input';
-import { useResponsive } from '../hooks/useResponsive';
+import { Dimensions, View, Text } from 'react-native';
 import { ConsignedProductRow as ConsignedProductRowType } from '../services/api';
 
 export type Product = {
@@ -30,7 +30,14 @@ export default function ConsignedProductRow({ product, onChange, initialQuantida
   const [quantidadeVendida, setQuantidadeVendida] = useState('');
   const [quantidadeDevolvida, setQuantidadeDevolvida] = useState('');
 
-  const { isTablet, fontSize } = useResponsive();
+  const { width } = Dimensions.get('window');
+  const isTablet = width >= 768;
+  const fontSize = {
+    small: isTablet ? 14 : 12,
+    base: isTablet ? 18 : 16,
+    large: isTablet ? 24 : 20,
+    xlarge: isTablet ? 32 : 24,
+  };
 
   useEffect(() => {
     if (initialQuantidade !== undefined) {

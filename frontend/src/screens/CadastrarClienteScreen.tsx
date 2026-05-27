@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, ScrollView, Alert, KeyboardAvoidingView, Platform, Keyboard, TouchableWithoutFeedback, NativeSyntheticEvent, TextInputFocusEventData, Pressable } from 'react-native';
+import { View, Text, ScrollView, Alert, KeyboardAvoidingView, Platform, Keyboard, TouchableWithoutFeedback, Pressable } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../routes';
 import Input from '../components/Input';
@@ -7,19 +7,24 @@ import Button from '../components/Button';
 import { saveClient, listClients } from '../services/api';
 import { useResponsive } from '../hooks/useResponsive';
 import { findAddressByCep, formatCep, normalizeCep } from '../services/cep';
+import { createKeyboardFocusHandler } from '../utils/keyboardFocus';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'CadastrarCliente'>;
 
 export default function CadastrarClienteScreen({ navigation, route }: Props) {
   const scrollRef = useRef<ScrollView>(null);
+  const handleFieldFocus = createKeyboardFocusHandler(scrollRef, 24);
   const clientId = route.params?.clientId;
   const [operationMode, setOperationMode] = useState<'CONSIGNADO' | 'VENDA'>('VENDA');
   const [nome, setNome] = useState('');
   const [cnpjCpf, setCnpjCpf] = useState('');
   const [cep, setCep] = useState('');
   const [endereco, setEndereco] = useState('');
+  const [numero, setNumero] = useState('');
+  const [complemento, setComplemento] = useState('');
   const [responsavel, setResponsavel] = useState('');
   const [telefone, setTelefone] = useState('');
+  const [email, setEmail] = useState('');
   const [buscandoCep, setBuscandoCep] = useState(false);
   const { isTablet, padding, fontSize } = useResponsive();
 
@@ -34,12 +39,20 @@ export default function CadastrarClienteScreen({ navigation, route }: Props) {
           setCnpjCpf(client.cnpjCpf || '');
           setCep(client.cep || '');
           setEndereco(client.endereco || '');
+          setNumero(client.numero || '');
+          setComplemento(client.complemento || '');
           setResponsavel(client.responsavel || '');
           setTelefone(client.telefone || '');
+          setEmail(client.email || '');
         }
       });
     }
   }, [clientId]);
+
+  function isValidEmail(value: string) {
+    const normalized = String(value || '').trim().toLowerCase();
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized);
+  }
 
   function formatDocument(value: string) {
     const digits = value.replace(/\D/g, '').slice(0, 14);
@@ -73,6 +86,15 @@ export default function CadastrarClienteScreen({ navigation, route }: Props) {
     return `(${limited.slice(0, 2)}) ${limited.slice(2, 7)}-${limited.slice(7)}`;
   }
 
+  function normalizeAddressNumber(value: string) {
+    const normalized = String(value || '').trim().toUpperCase().replace(/\s+/g, '');
+    if (normalized === 'S/N' || normalized === 'SN') {
+      return 'S/N';
+    }
+
+    return normalized.replace(/\D/g, '').slice(0, 10);
+  }
+
   async function handleBuscarCep() {
     const cepDigits = normalizeCep(cep);
     if (cepDigits.length !== 8) {
@@ -100,20 +122,23 @@ export default function CadastrarClienteScreen({ navigation, route }: Props) {
     }
   }
 
-  function handleFieldFocus(event: NativeSyntheticEvent<TextInputFocusEventData>) {
-    const target = event.nativeEvent.target;
-    setTimeout(() => {
-      (scrollRef.current as any)?.scrollResponderScrollNativeHandleToKeyboard(target, 120, true);
-    }, 40);
-  }
-
   const docDigits = cnpjCpf.replace(/\D/g, '');
   const phoneDigits = telefone.replace(/\D/g, '');
   async function handleSalvar() {
-    if (!nome.trim() || !cnpjCpf.trim() || !cep.trim() || !endereco.trim() || !responsavel.trim() || !telefone.trim()) {
+    const normalizedNumber = normalizeAddressNumber(numero);
+
+    if (!nome.trim() || !cnpjCpf.trim() || !cep.trim() || !endereco.trim() || !normalizedNumber || !responsavel.trim() || !telefone.trim() || !email.trim()) {
       Alert.alert(
         'Campos obrigatórios',
-        'Motivo: existem campos relevantes sem preenchimento.\n\nComo ajustar: preencha Nome, CNPJ/CPF, CEP, Endereço, Responsável e Telefone.',
+        'Motivo: existem campos relevantes sem preenchimento.\n\nComo ajustar: preencha Nome, CNPJ/CPF, CEP, Endereço, Número, Responsável, Telefone e E-mail.',
+      );
+      return;
+    }
+
+    if (!isValidEmail(email)) {
+      Alert.alert(
+        'Validação de e-mail',
+        'Motivo: e-mail inválido.\n\nComo ajustar: informe um e-mail no formato nome@dominio.com.',
       );
       return;
     }
@@ -169,8 +194,11 @@ export default function CadastrarClienteScreen({ navigation, route }: Props) {
       cnpjCpf: cnpjCpf.trim(),
       cep: formatCep(cepDigits),
       endereco: endereco.trim(),
+      numero: normalizedNumber,
+      complemento: complemento.trim(),
       responsavel: responsavel.trim(),
       telefone: telefone.trim(),
+      email: email.trim().toLowerCase(),
       operationMode,
     };
 
@@ -281,7 +309,24 @@ export default function CadastrarClienteScreen({ navigation, route }: Props) {
           value={endereco}
           onChangeText={setEndereco}
           onFocus={handleFieldFocus}
-          placeholder="Rua, número, bairro, cidade"
+          placeholder="Rua, bairro, cidade"
+        />
+
+        <Input
+          label="Número *"
+          value={numero}
+          onChangeText={(value) => setNumero(normalizeAddressNumber(value))}
+          onFocus={handleFieldFocus}
+          placeholder="Ex: 123 ou S/N"
+          maxLength={10}
+        />
+
+        <Input
+          label="Complemento"
+          value={complemento}
+          onChangeText={setComplemento}
+          onFocus={handleFieldFocus}
+          placeholder="Ex: Sala 2, fundos"
         />
 
         <Input
@@ -300,6 +345,16 @@ export default function CadastrarClienteScreen({ navigation, route }: Props) {
           placeholder="(11) 99999-9999"
           keyboardType="phone-pad"
           maxLength={15}
+        />
+
+        <Input
+          label="E-mail *"
+          value={email}
+          onChangeText={setEmail}
+          onFocus={handleFieldFocus}
+          placeholder="contato@barbearia.com"
+          keyboardType="email-address"
+          autoCapitalize="none"
         />
 
         {!clientId && (

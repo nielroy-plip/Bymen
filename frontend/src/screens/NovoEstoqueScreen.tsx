@@ -1,11 +1,12 @@
 import React, { useRef, useState } from 'react';
 import * as Sharing from 'expo-sharing';
-import { View, Text, ScrollView, Alert, Pressable, Platform, KeyboardAvoidingView, Keyboard, TouchableWithoutFeedback, NativeSyntheticEvent, TextInputFocusEventData } from 'react-native';
+import { View, Text, ScrollView, Alert, Pressable, Platform, KeyboardAvoidingView, Keyboard, TouchableWithoutFeedback } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../routes';
 import Card from '../components/Card';
 import Input from '../components/Input';
 import Button from '../components/Button';
+import BymenLoadingOverlay from '../components/BymenLoadingOverlay';
 import { PRODUCTS, PRODUTOS_BANCADA } from '../data/products';
 import { generateEstoquePDF } from '../services/pdf';
 import SignaturePad from '../components/SignaturePad';
@@ -13,11 +14,13 @@ import { Ionicons } from '@expo/vector-icons';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { addClientInitialStock, removeProductStock, saveClient } from '../services/api';
 import { getProductUnit } from '../utils/product';
+import { createKeyboardFocusHandler } from '../utils/keyboardFocus';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'NovoEstoque'>;
 
   const NovoEstoqueScreen: React.FC<Props> = ({ navigation, route }) => {
     const scrollRef = useRef<ScrollView>(null);
+    const handleFieldFocus = createKeyboardFocusHandler(scrollRef, 24);
     const [activeTab, setActiveTab] = useState<'produtos' | 'bancada'>('produtos');
     // Estado para produtos normais (estoque inicial, não cobrados)
     const [estoque, setEstoque] = useState<Record<string, string>>({});
@@ -33,13 +36,6 @@ type Props = NativeStackScreenProps<RootStackParamList, 'NovoEstoque'>;
     const [clientSaved, setClientSaved] = useState(false);
     const requiresSignature = Platform.OS !== 'web';
 
-    function handleFieldFocus(event: NativeSyntheticEvent<TextInputFocusEventData>) {
-      const target = event.nativeEvent.target;
-      setTimeout(() => {
-        (scrollRef.current as any)?.scrollResponderScrollNativeHandleToKeyboard(target, 120, true);
-      }, 40);
-    }
-  
     function handleChangeEstoque(id: string, value: string) {
       setEstoque(prev => ({ ...prev, [id]: value }));
     }
@@ -352,6 +348,10 @@ type Props = NativeStackScreenProps<RootStackParamList, 'NovoEstoque'>;
             </Text>
           )}
         </ScrollView>
+        <BymenLoadingOverlay
+          visible={isSendingStock || isGeneratingPdf}
+          label={isSendingStock ? 'Enviando estoque inicial...' : 'Gerando PDF...'}
+        />
         </KeyboardAvoidingView>
       </TouchableWithoutFeedback>
     );

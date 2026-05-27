@@ -32,6 +32,18 @@ export default function HistoricoMedicoesScreen({ navigation }: Props) {
     load();
   }, []);
 
+  function getPaymentLabel(method?: string) {
+    if (method === 'PIX') return 'PIX';
+    if (method === 'DINHEIRO') return 'Dinheiro';
+    if (method === 'CARTAO') return 'Cartão';
+    if (method === 'BOLETO') return 'Boleto';
+    return 'Não informado';
+  }
+
+  function hasCashDiscount(method?: string) {
+    return method === 'PIX' || method === 'DINHEIRO';
+  }
+
   function getStatusLabel(status?: string) {
     if (status === 'SIGNED') return 'Assinada';
     if (status === 'FINALIZED') return 'Finalizada';
@@ -153,9 +165,14 @@ export default function HistoricoMedicoesScreen({ navigation }: Props) {
           clientName: sale.clientName || clients.find((c) => c.id === sale.clientId)?.nome || 'Barbearia',
           dateTime: sale.dateTime,
           items: sale.items || [],
-          subtotal: Number(sale.total || 0),
+          subtotal: Number(sale.subtotal || sale.total || 0),
           total: Number(sale.total || 0),
           paymentMethod: sale.paymentMethod || 'PIX',
+          pixDiscountPercent: Number(sale.pixDiscountPercent || 0),
+          pixDiscountValue: Number(sale.pixDiscountValue || 0),
+          responsavelVenda: sale.responsavel,
+          observacoes: sale.observacoes,
+          signatureDataUrl: sale.signatureDataUrl,
         });
         await sharePdf(pdfUri);
         return;
@@ -181,6 +198,7 @@ export default function HistoricoMedicoesScreen({ navigation }: Props) {
         })),
         valorMedicao: Number(m.valorMedicao || 0),
         pagamentoPix: m.pagamentoPix,
+        paymentMethod: m.paymentMethod,
         medicaoRows: (m.medicaoRows || []).map((r: any) => ({
           ...r,
           quantidadeComprada: Number(r.estoqueAtual || 0),
@@ -281,7 +299,12 @@ export default function HistoricoMedicoesScreen({ navigation }: Props) {
                   </View>
                   {!!it.sale?.paymentMethod && (
                     <Text style={{ color: '#6B7280', marginTop: 6, fontSize: 12 }}>
-                      Pagamento: {it.sale.paymentMethod}
+                      Pagamento: {getPaymentLabel(it.sale.paymentMethod)}
+                    </Text>
+                  )}
+                  {hasCashDiscount(it.sale?.paymentMethod) && (
+                    <Text style={{ color: '#059669', marginTop: 2, fontSize: 12 }}>
+                      Desconto à vista 5% aplicado
                     </Text>
                   )}
                   <View style={{ height: 8 }} />
@@ -342,6 +365,16 @@ export default function HistoricoMedicoesScreen({ navigation }: Props) {
                     Último evento: {lastEvent.message}
                   </Text>
                 )}
+                {!!it.paymentMethod && (
+                  <Text style={{ color: '#6B7280', marginTop: 6, fontSize: 12 }}>
+                    Pagamento: {getPaymentLabel(it.paymentMethod)}
+                  </Text>
+                )}
+                {hasCashDiscount(it.paymentMethod) && (
+                  <Text style={{ color: '#059669', marginTop: 2, fontSize: 12 }}>
+                    Desconto à vista 5% aplicado
+                  </Text>
+                )}
                 <View style={{ height: 8 }} />
                 <Button
                   title="Reabrir"
@@ -358,6 +391,7 @@ export default function HistoricoMedicoesScreen({ navigation }: Props) {
                       responsavel: it.responsavel,
                       observacoes: it.observacoes,
                       pagamentoPix: it.pagamentoPix,
+                      paymentMethod: it.paymentMethod,
                       signatureDataUrl: it.signatureDataUrl
                     })
                   }

@@ -6,12 +6,14 @@ import DashboardScreen from './screens/DashboardScreen';
 import ClientesScreen from './screens/ClientesScreen';
 import EstoqueScreen from './screens/EstoqueScreen';
 import RelatoriosScreen from './screens/RelatoriosScreen';
+import ConfiguracoesGeraisScreen from './screens/ConfiguracoesGeraisScreen';
 
 type TabParamList = {
   Dashboard: undefined;
   Clientes: undefined;
   Estoque: undefined;
   Relatorios: undefined;
+  ConfiguracoesGerais: undefined;
 };
 
 const Tab = createBottomTabNavigator<TabParamList>();
@@ -38,6 +40,10 @@ export default function TabRoutes() {
             return <Ionicons name="stats-chart" size={size} color={color} />;
           }
 
+          if (route.name === 'ConfiguracoesGerais') {
+            return <Ionicons name="options" size={size} color={color} />;
+          }
+
           return <Ionicons name="home" size={size} color={color} />;
         },
       })}
@@ -46,6 +52,11 @@ export default function TabRoutes() {
       <Tab.Screen name="Clientes" component={ClientesScreen as React.ComponentType<any>} options={{ tabBarLabel: 'Clientes' }} />
       <Tab.Screen name="Estoque" component={EstoqueScreen as React.ComponentType<any>} options={{ tabBarLabel: 'Estoque' }} />
       <Tab.Screen name="Relatorios" component={RelatoriosScreen as React.ComponentType<any>} options={{ tabBarLabel: 'Relatórios' }} />
+      <Tab.Screen
+        name="ConfiguracoesGerais"
+        component={ConfiguracoesGeraisScreen as React.ComponentType<any>}
+        options={{ tabBarLabel: 'Config. Gerais' }}
+      />
     </Tab.Navigator>
   );
 }

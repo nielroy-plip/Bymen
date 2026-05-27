@@ -1,5 +1,5 @@
-import React, { memo, useEffect, useMemo, useState } from 'react';
-import { View, Text, TextInput, StyleSheet } from 'react-native';
+import React, { memo, useEffect, useMemo, useRef, useState } from 'react';
+import { Dimensions, View, Text, TextInput, StyleSheet } from 'react-native';
 
 const styles = StyleSheet.create({
   gridRow: {
@@ -33,7 +33,6 @@ const styles = StyleSheet.create({
 
 
 import Input from './Input';
-import { useResponsive } from '../hooks/useResponsive';
 import { MedicaoRow } from '../services/api';
 import { getProductUnit } from '../utils/product';
 export type { MedicaoRow } from '../services/api';
@@ -84,6 +83,8 @@ function ProductRowComponent({
   const [produtosRetirados, setProdutosRetirados] = useState('');
   // Controla se o usuário está editando manualmente o campo Produtos Retirados
   const [produtosRetiradosManual, setProdutosRetiradosManual] = useState(false);
+  const didMountRef = useRef(false);
+  const syncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     setEstoqueAtual(String(initialEstoque ?? product.estoque ?? 0));
@@ -118,7 +119,17 @@ function ProductRowComponent({
   }, [estoqueAtual, vendidos, repostos, produtosRetirados, produtosRetiradosManual, product.preco, isStockOnly]);
 
   useEffect(() => {
-    onChange({
+    if (!didMountRef.current) {
+      didMountRef.current = true;
+      return;
+    }
+
+    if (syncTimerRef.current) {
+      clearTimeout(syncTimerRef.current);
+    }
+
+    syncTimerRef.current = setTimeout(() => {
+      onChange({
       id: product.id,
       nome: product.nome,
       linha: product.linha,
@@ -132,7 +143,15 @@ function ProductRowComponent({
       novoEstoque: numbers.novoEstoque,
       valorMedicao: numbers.valorMedicao,
       produtosRetirados: numbers.produtosRetirados
-    });
+      });
+    }, 120);
+
+    return () => {
+      if (syncTimerRef.current) {
+        clearTimeout(syncTimerRef.current);
+        syncTimerRef.current = null;
+      }
+    };
   }, [
     numbers,
     onChange,
@@ -144,7 +163,14 @@ function ProductRowComponent({
     product.precoSugestao,
   ]);
 
-  const { isTablet, fontSize } = useResponsive();
+  const { width } = Dimensions.get('window');
+  const isTablet = width >= 768;
+  const fontSize = {
+    small: isTablet ? 14 : 12,
+    base: isTablet ? 18 : 16,
+    large: isTablet ? 24 : 20,
+    xlarge: isTablet ? 32 : 24,
+  };
 
   return (
     <View

@@ -42,6 +42,8 @@ postgresql://postgres.<project_ref>:<password>@<pooler_host>:6543/postgres?pgbou
 
 - `POST /api/homolog/users/register`
 - `POST /api/homolog/users/login`
+- `GET /api/homolog/users?actorEmail=<email_do_gestor>`
+- `POST /api/homolog/users/role/update`
 - `POST /api/homolog/clients/upsert`
 - `GET /api/homolog/clients`
 - `POST /api/homolog/measurements/upsert`

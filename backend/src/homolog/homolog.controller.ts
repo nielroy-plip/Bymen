@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, Query } from '@nestjs/common';
 import { HomologService } from './homolog.service';
 import { RegisterUserDto } from './dto/register-user.dto';
 import { LoginUserDto } from './dto/login-user.dto';
@@ -7,6 +7,7 @@ import { SaveMeasurementDto } from './dto/save-measurement.dto';
 import { StockMovementDto } from './dto/stock-movement.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { UpdateUserProfileDto } from './dto/update-user-profile.dto';
+import { UpdateUserRoleDto } from './dto/update-user-role.dto';
 
 @Controller('homolog')
 export class HomologController {
@@ -30,6 +31,16 @@ export class HomologController {
   @Post('users/profile/update')
   updateProfile(@Body() dto: UpdateUserProfileDto) {
     return this.homologService.updateUserProfile(dto);
+  }
+
+  @Get('users')
+  listUsers(@Query('actorEmail') actorEmail?: string) {
+    return this.homologService.listUsers(actorEmail);
+  }
+
+  @Post('users/role/update')
+  updateUserRole(@Body() dto: UpdateUserRoleDto) {
+    return this.homologService.updateUserRole(dto);
   }
 
   @Post('clients/upsert')

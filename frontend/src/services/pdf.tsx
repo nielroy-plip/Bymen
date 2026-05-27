@@ -111,6 +111,11 @@ export async function generateMeasurementPDF(params: {
     bancadaRows: any;
     valorMedicao: number;
     pagamentoPix: any;
+    paymentMethod?: 'PIX' | 'DINHEIRO' | 'CARTAO' | 'BOLETO';
+    isCreditInstallment?: boolean;
+    installmentCount?: number;
+    creditMonthlyInterestPercent?: number;
+    creditInterestValue?: number;
     medicaoRows: any;
     linha: string;
     nome: string;
@@ -128,6 +133,16 @@ export async function generateMeasurementPDF(params: {
     observacoes?: string;
     }
 ): Promise<string> {
+  const hasFivePercentDiscount = params.paymentMethod === 'PIX' || params.paymentMethod === 'DINHEIRO' || (!params.paymentMethod && Boolean(params.pagamentoPix));
+  const discountLabel = params.paymentMethod === 'DINHEIRO' ? 'Dinheiro' : 'PIX';
+  const discountValue = hasFivePercentDiscount ? params.valorMedicao - (params.valorMedicao * 0.95) : 0;
+  const medicaoComDesconto = hasFivePercentDiscount ? params.valorMedicao * 0.95 : params.valorMedicao;
+  const isCardInstallment = params.paymentMethod === 'CARTAO' && Boolean(params.isCreditInstallment);
+  const installmentCount = Number(params.installmentCount || 1);
+  const creditMonthlyInterestPercent = Number(params.creditMonthlyInterestPercent || 0);
+  const creditInterestValue = Number(params.creditInterestValue || 0);
+  const installmentValue = isCardInstallment && installmentCount > 0 ? Number(params.totalGeral || 0) / installmentCount : 0;
+
   const medicaoRowsHTML = params.medicaoRows
     .map(
       (r: any) =>
@@ -178,11 +193,11 @@ export async function generateMeasurementPDF(params: {
           <div style="margin-top:12px;text-align:right;padding:12px;background:#DBEAFE;border-radius:6px">
             <strong style="font-size:16px;color:#1E40AF">Valor Medição: ${formatCurrency(valorMedicao)}</strong>
           </div>
-          ${params.pagamentoPix ? `
+          ${hasFivePercentDiscount ? `
           <div style="margin-top:8px;text-align:right;padding:8px;background:#D1FAE5;border-radius:6px">
-            <span style="font-size:14px;color:#059669;font-weight:600">Desconto PIX aplicado: -5% (${formatCurrency(params.valorMedicao - (params.valorMedicao * 0.95))})</span>
+            <span style="font-size:14px;color:#059669;font-weight:600">Desconto ${discountLabel} aplicado: -5% (${formatCurrency(discountValue)})</span>
             <br />
-            <span style="font-size:14px;color:#059669;font-weight:600">Valor com PIX: ${formatCurrency(params.valorMedicao * 0.95)}</span>
+            <span style="font-size:14px;color:#059669;font-weight:600">Valor com ${discountLabel}: ${formatCurrency(medicaoComDesconto)}</span>
           </div>
           ` : ''}
           <div style="margin-top:12px;text-align:left;color:#374151;font-size:12px">
@@ -320,26 +335,48 @@ export async function generateMeasurementPDF(params: {
         <div style="background:#fff;box-shadow:0 2px 8px #00000010;border-radius:12px;padding:24px;margin-bottom:24px;page-break-inside:avoid">
           <h2 style="margin:0 0 16px 0;color:#111827;font-size:24px">Resumo Financeiro</h2>
           <div style="display:flex;justify-content:space-between;margin-bottom:8px">
+            <span style="color:#6B7280">Forma de pagamento:</span>
+            <span style="font-weight:600">${params.paymentMethod === 'DINHEIRO' ? 'Dinheiro' : params.paymentMethod === 'CARTAO' ? 'Cartão' : params.paymentMethod === 'BOLETO' ? 'Boleto' : 'PIX'}</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;margin-bottom:8px">
             <span style="color:#6B7280">Valor Medição (Vendas):</span>
             <span style="font-weight:600">${formatCurrency(params.valorMedicao)}</span>
           </div>
-          ${params.pagamentoPix ? `
+          ${hasFivePercentDiscount ? `
           <div style="display:flex;justify-content:space-between;margin-bottom:8px">
-            <span style="color:#059669">Desconto PIX aplicado:</span>
-            <span style="font-weight:600">-5% (${formatCurrency(params.valorMedicao - (params.valorMedicao * 0.95))})</span>
+            <span style="color:#059669">Desconto ${discountLabel} aplicado:</span>
+            <span style="font-weight:600">-5% (${formatCurrency(discountValue)})</span>
           </div>
           <div style="display:flex;justify-content:space-between;margin-bottom:8px">
-            <span style="color:#059669">Valor com PIX:</span>
-            <span style="font-weight:600">${formatCurrency(params.valorMedicao * 0.95)}</span>
+            <span style="color:#059669">Valor com ${discountLabel}:</span>
+            <span style="font-weight:600">${formatCurrency(medicaoComDesconto)}</span>
           </div>
           ` : ''}
           <div style="display:flex;justify-content:space-between;margin-bottom:16px">
             <span style="color:#6B7280">Valor Bancada (Uso Interno):</span>
             <span style="font-weight:600">${formatCurrency(params.valorBancada)}</span>
           </div>
+          ${isCardInstallment ? `
+          <div style="display:flex;justify-content:space-between;margin-bottom:8px">
+            <span style="color:#1D4ED8">Parcelamento:</span>
+            <span style="font-weight:600">${installmentCount}x</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;margin-bottom:8px">
+            <span style="color:#1D4ED8">Juros mensal:</span>
+            <span style="font-weight:600">${creditMonthlyInterestPercent.toFixed(2).replace('.', ',')}%</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;margin-bottom:8px">
+            <span style="color:#1D4ED8">Acréscimo de juros:</span>
+            <span style="font-weight:600">+${formatCurrency(creditInterestValue)}</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;margin-bottom:16px">
+            <span style="color:#1D4ED8">Simulação de parcela:</span>
+            <span style="font-weight:600">${installmentCount}x de ${formatCurrency(installmentValue)}</span>
+          </div>
+          ` : ''}
           <div style="border-top:2px solid #E5E7EB;padding-top:16px;display:flex;justify-content:space-between">
             <span style="font-size:20px;font-weight:700;color:#111827">TOTAL GERAL:</span>
-            <span style="font-size:24px;font-weight:700;color:#059669">${formatCurrency(params.pagamentoPix ? (params.totalGeral - (params.valorMedicao - (params.valorMedicao * 0.95))) : params.totalGeral)}</span>
+            <span style="font-size:24px;font-weight:700;color:#059669">${formatCurrency(params.totalGeral)}</span>
           </div>
           <div style="margin-top:24px">
             <div style="margin-bottom:8px">
@@ -498,6 +535,10 @@ export async function generateSalePDF(params: {
   subtotal: number;
   total: number;
   paymentMethod: 'PIX' | 'DINHEIRO' | 'CARTAO' | 'BOLETO';
+  isCreditInstallment?: boolean;
+  installmentCount?: number;
+  creditMonthlyInterestPercent?: number;
+  creditInterestValue?: number;
   responsavelVenda?: string;
   observacoes?: string;
   pixDiscountPercent?: number;
@@ -571,10 +612,17 @@ export async function generateSalePDF(params: {
           ? 'Cartao'
           : 'Boleto';
 
-  const pixDiscount = params.paymentMethod === 'PIX'
+  const hasFivePercentDiscountOnSale = params.paymentMethod === 'PIX' || params.paymentMethod === 'DINHEIRO';
+  const saleDiscountLabel = params.paymentMethod === 'DINHEIRO' ? 'Dinheiro' : 'PIX';
+  const isCardInstallment = params.paymentMethod === 'CARTAO' && Boolean(params.isCreditInstallment);
+  const installmentCount = Number(params.installmentCount || 1);
+  const creditMonthlyInterestPercent = Number(params.creditMonthlyInterestPercent || 0);
+  const creditInterestValue = Number(params.creditInterestValue || 0);
+  const installmentValue = isCardInstallment && installmentCount > 0 ? Number(params.total || 0) / installmentCount : 0;
+  const pixDiscount = hasFivePercentDiscountOnSale
     ? Number(params.pixDiscountValue ?? (params.subtotal - params.total))
     : 0;
-  const pixPercent = params.paymentMethod === 'PIX'
+  const pixPercent = hasFivePercentDiscountOnSale
     ? Number(params.pixDiscountPercent ?? (params.subtotal > 0 ? (pixDiscount / params.subtotal) * 100 : 0))
     : 0;
 
@@ -643,7 +691,11 @@ export async function generateSalePDF(params: {
           <p style="margin:0 0 8px 0"><strong>Subtotal Bancada:</strong> ${formatCurrency(subtotalBancada)}</p>
           <p style="margin:0 0 8px 0"><strong>Subtotal geral:</strong> ${formatCurrency(params.subtotal)}</p>
           <p style="margin:0 0 8px 0"><strong>Faixas aplicadas:</strong> Base ${tierSummary.base} un • 5-9 un ${tierSummary.qtd5} un • 10+ un ${tierSummary.qtd10} un</p>
-          ${params.paymentMethod === 'PIX' ? `<p style="margin:0 0 8px 0;color:#059669"><strong>Desconto PIX (${pixPercent.toFixed(2).replace('.', ',')}%):</strong> -${formatCurrency(pixDiscount)}</p>` : ''}
+          ${hasFivePercentDiscountOnSale ? `<p style="margin:0 0 8px 0;color:#059669"><strong>Desconto ${saleDiscountLabel} (${pixPercent.toFixed(2).replace('.', ',')}%):</strong> -${formatCurrency(pixDiscount)}</p>` : ''}
+          ${isCardInstallment ? `<p style="margin:0 0 8px 0;color:#1D4ED8"><strong>Parcelamento:</strong> ${installmentCount}x</p>` : ''}
+          ${isCardInstallment ? `<p style="margin:0 0 8px 0;color:#1D4ED8"><strong>Juros mensal:</strong> ${creditMonthlyInterestPercent.toFixed(2).replace('.', ',')}%</p>` : ''}
+          ${isCardInstallment ? `<p style="margin:0 0 8px 0;color:#1D4ED8"><strong>Acréscimo de juros:</strong> +${formatCurrency(creditInterestValue)}</p>` : ''}
+          ${isCardInstallment ? `<p style="margin:0 0 8px 0;color:#1D4ED8"><strong>Simulação:</strong> ${installmentCount}x de ${formatCurrency(installmentValue)}</p>` : ''}
           <p style="margin:0;font-size:20px;font-weight:700;color:#111827"><strong>Total:</strong> ${formatCurrency(params.total)}</p>
         </div>
 

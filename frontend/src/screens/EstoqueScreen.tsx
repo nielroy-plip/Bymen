@@ -1,21 +1,43 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, ScrollView, Alert, Pressable, KeyboardAvoidingView, Platform, Keyboard, TouchableWithoutFeedback } from 'react-native';
+import { View, Text, ScrollView, Alert, Pressable, KeyboardAvoidingView, Platform, Keyboard, TouchableWithoutFeedback, Dimensions, UIManager } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
 import { RootStackParamList } from '../routes';
 import Button from '../components/Button';
 import Input from '../components/Input';
 import Card from '../components/Card';
-import { listProducts, addProductStock, removeProductStock, createProduct, deleteProduct } from '../services/api';
+import {
+  listProducts,
+  addProductStock,
+  removeProductStock,
+  createProduct,
+  deleteProduct,
+  getCurrentUser,
+  listUsersForManagement,
+  listProductsForStreetUser,
+  transferDistributorStockToUser,
+  ManagedUser,
+} from '../services/api';
 import { Product } from '../components/ProductRow';
 import { Ionicons } from '@expo/vector-icons';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { getProductUnit } from '../utils/product';
+import { sortByCatalogOrder } from '../utils/productOrder';
+import { canManageUsers, getUserAppRole } from '../services/access';
+import {
+  getDefaultStockCriticalThreshold,
+  getProductCriticalThreshold,
+  getStockCriticalThresholds,
+  saveProductCriticalThreshold,
+  StockCriticalThresholds,
+} from '../services/stockCritical';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Estoque'>;
 
-export default function EstoqueScreen({}: Props) {
+export default function EstoqueScreen({ navigation }: Props) {
   const scrollRef = useRef<ScrollView>(null);
+  const keyboardHeightRef = useRef(0);
+  const scrollOffsetYRef = useRef(0);
   const [products, setProducts] = useState<Product[]>([]);
   const [quantities, setQuantities] = useState<Record<string, string>>({});
   const [activeTab, setActiveTab] = useState<'produtos' | 'bancada'>('produtos');
@@ -30,14 +52,27 @@ export default function EstoqueScreen({}: Props) {
   const [newProductAsProduto, setNewProductAsProduto] = useState(true);
   const [newProductAsBancada, setNewProductAsBancada] = useState(false);
   const [isCreatingProduct, setIsCreatingProduct] = useState(false);
+  const [isGestor, setIsGestor] = useState(false);
+  const [streetUsers, setStreetUsers] = useState<ManagedUser[]>([]);
+  const [currentUserEmail, setCurrentUserEmail] = useState('');
+  const [criticalThresholds, setCriticalThresholds] = useState<StockCriticalThresholds>({});
+  const [criticalInputs, setCriticalInputs] = useState<Record<string, string>>({});
+  const [savingCriticalByProduct, setSavingCriticalByProduct] = useState<Record<string, boolean>>({});
   const criticalItems = useMemo(
-    () => products.filter((item) => (item.estoque ?? 0) <= 10).map((item) => ({
-      id: item.id,
-      nome: item.nome,
-      linha: item.linha,
-      estoque: item.estoque ?? 0,
-    })),
-    [products]
+    () =>
+      products
+        .map((item) => {
+          const limite = getProductCriticalThreshold(item.id, criticalThresholds);
+          return {
+            id: item.id,
+            nome: item.nome,
+            linha: item.linha,
+            estoque: item.estoque ?? 0,
+            limite,
+          };
+        })
+        .filter((item) => item.estoque <= item.limite),
+    [products, criticalThresholds],
   );
   const criticalProdutos = useMemo(
     () => criticalItems.filter((item) => !item.id.startsWith('b')),
@@ -47,12 +82,40 @@ export default function EstoqueScreen({}: Props) {
     () => criticalItems.filter((item) => item.id.startsWith('b')),
     [criticalItems]
   );
+  useEffect(() => {
+    const showSubscription = Keyboard.addListener('keyboardDidShow', (event) => {
+      keyboardHeightRef.current = event.endCoordinates?.height || 0;
+    });
+
+    const hideSubscription = Keyboard.addListener('keyboardDidHide', () => {
+      keyboardHeightRef.current = 0;
+    });
+
+    return () => {
+      showSubscription.remove();
+      hideSubscription.remove();
+    };
+  }, []);
 
   function handleFieldFocus(event: any) {
-    const target = event.nativeEvent.target;
+    const target = Number(event?.nativeEvent?.target || 0);
+    if (!target) return;
+
     setTimeout(() => {
-      (scrollRef.current as any)?.scrollResponderScrollNativeHandleToKeyboard(target, 120, true);
-    }, 40);
+      UIManager.measureInWindow(target, (_x, y, _width, height) => {
+        const windowHeight = Dimensions.get('window').height;
+        const keyboardHeight = keyboardHeightRef.current;
+        const keyboardTop = keyboardHeight > 0 ? windowHeight - keyboardHeight : windowHeight * 0.58;
+        const visibleBottom = keyboardTop - 20;
+        const fieldBottom = y + height;
+
+        if (fieldBottom <= visibleBottom) return;
+
+        const neededDelta = fieldBottom - visibleBottom + 16;
+        const targetOffset = Math.max(0, scrollOffsetYRef.current + neededDelta);
+        scrollRef.current?.scrollTo({ y: targetOffset, animated: true });
+      });
+    }, 90);
   }
 
   // Funções para movimentação de estoque de bancada
@@ -103,25 +166,138 @@ export default function EstoqueScreen({}: Props) {
     }, [])
   );
 
-  function sortProductsByDisplayOrder(list: Product[]) {
-    return [...list].sort((a, b) => {
-      const lineComparison = String(a.linha || '').localeCompare(String(b.linha || ''), 'pt-BR', {
-        sensitivity: 'base',
-      });
-      if (lineComparison !== 0) return lineComparison;
+  async function loadProducts() {
+    const [thresholds, user] = await Promise.all([
+      getStockCriticalThresholds(),
+      getCurrentUser(),
+    ]);
 
-      const nameComparison = String(a.nome || '').localeCompare(String(b.nome || ''), 'pt-BR', {
-        sensitivity: 'base',
-      });
-      if (nameComparison !== 0) return nameComparison;
+    const userEmail = String(user?.email || '').trim().toLowerCase();
+    const appRole = getUserAppRole(user);
+    const gestor = canManageUsers(appRole);
+    const prods = gestor ? await listProducts() : await listProductsForStreetUser(userEmail);
 
-      return Number(a.cap || 0) - Number(b.cap || 0);
+    setProducts(sortByCatalogOrder(prods));
+    setCriticalThresholds(thresholds);
+    setIsGestor(gestor);
+    setCurrentUserEmail(userEmail);
+
+    if (gestor && userEmail) {
+      try {
+        const users = await listUsersForManagement(userEmail);
+        const eligibleUsers = users.filter((item) => {
+          const role = String(item.role || '').trim().toUpperCase();
+          return role === 'VENDEDOR' || role === 'SUPERVISOR';
+        });
+        setStreetUsers(eligibleUsers);
+      } catch {
+        setStreetUsers([]);
+      }
+    } else {
+      setStreetUsers([]);
+    }
+
+    setCriticalInputs((prev) => {
+      const next = { ...prev };
+      prods.forEach((product) => {
+        if (typeof next[product.id] !== 'string' || next[product.id].trim().length === 0) {
+          next[product.id] = String(getProductCriticalThreshold(product.id, thresholds));
+        }
+      });
+      return next;
     });
   }
 
-  async function loadProducts() {
-    const prods = await listProducts();
-    setProducts(sortProductsByDisplayOrder(prods));
+  function getStreetUserLabel(email: string) {
+    const normalized = String(email || '').trim().toLowerCase();
+    const user = streetUsers.find((item) => String(item.email || '').trim().toLowerCase() === normalized);
+    return user?.username || user?.email || normalized;
+  }
+
+  function selectTransferTargetEmail(): Promise<string | null> {
+    if (!isGestor) {
+      return Promise.resolve(currentUserEmail || null);
+    }
+
+    if (streetUsers.length === 0) {
+      return Promise.resolve(null);
+    }
+
+    if (streetUsers.length === 1) {
+      return Promise.resolve(String(streetUsers[0].email || '').trim().toLowerCase());
+    }
+
+    return new Promise((resolve) => {
+      Alert.alert(
+        'Transferir para quem?',
+        'Selecione o vendedor/supervisor de destino.',
+        [
+          ...streetUsers.slice(0, 8).map((user) => ({
+            text: String(user.username || user.email),
+            onPress: () => resolve(String(user.email || '').trim().toLowerCase()),
+          })),
+          { text: 'Cancelar', style: 'cancel', onPress: () => resolve(null) },
+        ],
+      );
+    });
+  }
+
+  async function handleTransferToStreet(productId: string, tab: 'produtos' | 'bancada') {
+    const quantityMap = tab === 'bancada' ? bancadaQuantities : quantities;
+    const qty = parseInt(quantityMap[productId] || '0');
+
+    if (qty <= 0) {
+      Alert.alert('Erro', 'Quantidade deve ser maior que 0');
+      return;
+    }
+
+    const targetEmail = (await selectTransferTargetEmail())?.trim().toLowerCase() || '';
+
+    if (!targetEmail) {
+      Alert.alert('Validação', 'Selecione um vendedor/supervisor para transferir o estoque.');
+      return;
+    }
+
+    try {
+      const success = await transferDistributorStockToUser(targetEmail, productId, qty);
+      if (!success) {
+        Alert.alert('Erro', 'Estoque geral insuficiente para esta retirada.');
+        return;
+      }
+
+      if (tab === 'bancada') {
+        setBancadaQuantities((prev) => ({ ...prev, [productId]: '' }));
+      } else {
+        setQuantities((prev) => ({ ...prev, [productId]: '' }));
+      }
+
+      await loadProducts();
+      Alert.alert('Sucesso', `Estoque transferido para ${getStreetUserLabel(targetEmail)}.`);
+    } catch {
+      Alert.alert('Erro', 'Não foi possível transferir o estoque para rua.');
+    }
+  }
+
+  async function handleSaveCriticalThreshold(productId: string) {
+    const raw = String(criticalInputs[productId] || '').trim();
+    const value = Number(raw);
+
+    if (!Number.isFinite(value) || value < 0) {
+      Alert.alert('Validação', 'Informe um limite crítico válido (0 ou maior).');
+      return;
+    }
+
+    setSavingCriticalByProduct((prev) => ({ ...prev, [productId]: true }));
+    try {
+      const next = await saveProductCriticalThreshold(productId, value);
+      setCriticalThresholds(next);
+      setCriticalInputs((prev) => ({ ...prev, [productId]: String(Math.floor(value)) }));
+      Alert.alert('Sucesso', 'Limite crítico atualizado para este produto.');
+    } catch {
+      Alert.alert('Erro', 'Não foi possível salvar o limite crítico.');
+    } finally {
+      setSavingCriticalByProduct((prev) => ({ ...prev, [productId]: false }));
+    }
   }
 
   async function handleEntry(productId: string) {
@@ -329,6 +505,10 @@ export default function EstoqueScreen({}: Props) {
         contentContainerStyle={{ padding: 24, paddingBottom: 140 }}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
+        onScroll={(event) => {
+          scrollOffsetYRef.current = event.nativeEvent.contentOffset.y;
+        }}
+        scrollEventThrottle={16}
       >
         <Text style={{ fontSize: 24, fontWeight: '700', color: '#111827', marginBottom: 16 }}>Estoque</Text>
 
@@ -351,6 +531,7 @@ export default function EstoqueScreen({}: Props) {
                 label="Nome do produto"
                 value={newProductName}
                 onChangeText={setNewProductName}
+                onFocus={handleFieldFocus}
                 placeholder="Ex.: Shampoo"
               />
 
@@ -358,6 +539,7 @@ export default function EstoqueScreen({}: Props) {
                 label="Linha"
                 value={newProductLine}
                 onChangeText={setNewProductLine}
+                onFocus={handleFieldFocus}
                 placeholder="Ex.: Wood, Ocean"
               />
 
@@ -365,6 +547,7 @@ export default function EstoqueScreen({}: Props) {
                 label="Capacidade (ml ou g)"
                 value={newProductCap}
                 onChangeText={(text) => setNewProductCap(text.replace(/\D/g, ''))}
+                onFocus={handleFieldFocus}
                 keyboardType="numeric"
                 placeholder="Ex.: 240"
               />
@@ -373,6 +556,7 @@ export default function EstoqueScreen({}: Props) {
                 label="Valor de venda"
                 value={newProductSalePrice}
                 onChangeText={(text) => setNewProductSalePrice(formatCurrencyInput(text))}
+                onFocus={handleFieldFocus}
                 keyboardType="decimal-pad"
                 placeholder="Ex.: 65,00"
               />
@@ -381,6 +565,7 @@ export default function EstoqueScreen({}: Props) {
                 label="Valor no consignado"
                 value={newProductConsignedPrice}
                 onChangeText={(text) => setNewProductConsignedPrice(formatCurrencyInput(text))}
+                onFocus={handleFieldFocus}
                 keyboardType="decimal-pad"
                 placeholder="Ex.: 42,00"
               />
@@ -432,12 +617,27 @@ export default function EstoqueScreen({}: Props) {
         </Card>
 
         <Card>
+          <Text style={{ fontSize: 16, fontWeight: '700', color: '#0F766E', marginBottom: 8 }}>
+            Estoque na rua
+          </Text>
+          <Text style={{ color: '#6B7280', marginBottom: 10 }}>
+            Para manter esta tela mais limpa, o detalhamento completo foi movido para uma página dedicada.
+          </Text>
+          <Button
+            title="Abrir tela de estoque na rua"
+            icon="trail-sign-outline"
+            onPress={() => navigation.navigate('RelatorioEstoqueRua')}
+            variant="secondary"
+          />
+        </Card>
+
+        <Card>
           <Pressable
             onPress={() => setShowCriticalDetails((prev) => !prev)}
             style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}
           >
             <Text style={{ fontSize: 16, fontWeight: '700', color: '#92400E' }}>
-              Estoque crítico (≤ 10)
+              Estoque crítico por produto
             </Text>
             <Text style={{ color: '#92400E', fontWeight: '700' }}>
               {showCriticalDetails ? 'Ocultar lista' : 'Mostrar lista'}
@@ -448,13 +648,19 @@ export default function EstoqueScreen({}: Props) {
             Total: {criticalItems.length} • Produtos: {criticalProdutos.length} • Bancada: {criticalBancada.length}
           </Text>
 
+          {!isGestor && (
+            <Text style={{ color: '#92400E', marginBottom: showCriticalDetails ? 10 : 0 }}>
+              Apenas Gestor pode alterar o limite crítico por item.
+            </Text>
+          )}
+
           {showCriticalDetails && (
             <>
               <Text style={{ color: '#1E40AF', fontWeight: '700', marginBottom: 6 }}>Produtos</Text>
               {criticalProdutos.length > 0 ? (
                 criticalProdutos.map((item) => (
                   <Text key={item.id} style={{ color: '#1E40AF', marginBottom: 4 }}>
-                    • {item.nome} - {item.linha} ({item.estoque})
+                    • {item.nome} - {item.linha} ({item.estoque}/{item.limite})
                   </Text>
                 ))
               ) : (
@@ -465,7 +671,7 @@ export default function EstoqueScreen({}: Props) {
               {criticalBancada.length > 0 ? (
                 criticalBancada.map((item) => (
                   <Text key={item.id} style={{ color: '#991B1B', marginBottom: 4 }}>
-                    • {item.nome} - {item.linha} ({item.estoque})
+                    • {item.nome} - {item.linha} ({item.estoque}/{item.limite})
                   </Text>
                 ))
               ) : (
@@ -487,6 +693,27 @@ export default function EstoqueScreen({}: Props) {
                 </View>
                 <Text style={{ color: '#6B7280' }}>Linha: {p.linha}</Text>
                 <Text style={{ color: '#6B7280' }}>Estoque Atual: {p.estoque}</Text>
+                <Text style={{ color: '#92400E', fontWeight: '600' }}>
+                  Limite crítico: {getProductCriticalThreshold(p.id, criticalThresholds)}
+                </Text>
+                {isGestor && (
+                  <View style={{ marginTop: 10 }}>
+                    <Input
+                      label="Configurar limite crítico"
+                      value={criticalInputs[p.id] || String(getProductCriticalThreshold(p.id, criticalThresholds))}
+                      onChangeText={(text) => setCriticalInputs((prev) => ({ ...prev, [p.id]: text.replace(/\D/g, '') }))}
+                      onFocus={handleFieldFocus}
+                      placeholder={String(getDefaultStockCriticalThreshold())}
+                      keyboardType="numeric"
+                    />
+                    <Button
+                      title={savingCriticalByProduct[p.id] ? 'Salvando...' : 'Salvar limite crítico'}
+                      onPress={() => handleSaveCriticalThreshold(p.id)}
+                      disabled={Boolean(savingCriticalByProduct[p.id])}
+                      variant="secondary"
+                    />
+                  </View>
+                )}
                 <View style={{ marginTop: 12 }}>
                   <Input
                     label="Quantidade"
@@ -496,10 +723,21 @@ export default function EstoqueScreen({}: Props) {
                     placeholder="0"
                     keyboardType="numeric"
                   />
-                  <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
-                    <Button title="Entrada" onPress={() => handleEntry(p.id)} variant="secondary" style={{ flex: 1 }} />
-                    <Button title="Saída" onPress={() => handleExit(p.id)} style={{ flex: 1 }} />
-                  </View>
+                  {isGestor ? (
+                    <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
+                      <Button title="Entrada" onPress={() => handleEntry(p.id)} variant="secondary" style={{ flex: 1 }} />
+                      <Button title="Saída" onPress={() => handleExit(p.id)} style={{ flex: 1 }} />
+                      <Button
+                        title="Rua"
+                        onPress={() => handleTransferToStreet(p.id, 'produtos')}
+                        variant="secondary"
+                        style={{ flex: 1 }}
+                        disabled={streetUsers.length === 0}
+                      />
+                    </View>
+                  ) : (
+                    <Button title="Retirar do geral" onPress={() => handleTransferToStreet(p.id, 'produtos')} />
+                  )}
                 </View>
               </Card>
             </View>
@@ -518,6 +756,27 @@ export default function EstoqueScreen({}: Props) {
                 <Text style={{ color: '#6B7280' }}>Linha: {p.linha}</Text>
                 <Text style={{ color: '#6B7280' }}>Capacidade: {p.cap}{getProductUnit(p.nome)}</Text>
                 <Text style={{ color: '#6B7280' }}>Estoque Atual: {p.estoque}</Text>
+                <Text style={{ color: '#92400E', fontWeight: '600' }}>
+                  Limite crítico: {getProductCriticalThreshold(p.id, criticalThresholds)}
+                </Text>
+                {isGestor && (
+                  <View style={{ marginTop: 10 }}>
+                    <Input
+                      label="Configurar limite crítico"
+                      value={criticalInputs[p.id] || String(getProductCriticalThreshold(p.id, criticalThresholds))}
+                      onChangeText={(text) => setCriticalInputs((prev) => ({ ...prev, [p.id]: text.replace(/\D/g, '') }))}
+                      onFocus={handleFieldFocus}
+                      placeholder={String(getDefaultStockCriticalThreshold())}
+                      keyboardType="numeric"
+                    />
+                    <Button
+                      title={savingCriticalByProduct[p.id] ? 'Salvando...' : 'Salvar limite crítico'}
+                      onPress={() => handleSaveCriticalThreshold(p.id)}
+                      disabled={Boolean(savingCriticalByProduct[p.id])}
+                      variant="secondary"
+                    />
+                  </View>
+                )}
                 <View style={{ marginTop: 12 }}>
                   <Input
                     label="Quantidade"
@@ -527,10 +786,21 @@ export default function EstoqueScreen({}: Props) {
                     placeholder="0"
                     keyboardType="numeric"
                   />
-                  <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
-                    <Button title="Entrada" onPress={() => handleBancadaEntry(p.id)} variant="secondary" style={{ flex: 1 }} />
-                    <Button title="Saída" onPress={() => handleBancadaExit(p.id)} style={{ flex: 1 }} />
-                  </View>
+                  {isGestor ? (
+                    <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
+                      <Button title="Entrada" onPress={() => handleBancadaEntry(p.id)} variant="secondary" style={{ flex: 1 }} />
+                      <Button title="Saída" onPress={() => handleBancadaExit(p.id)} style={{ flex: 1 }} />
+                      <Button
+                        title="Rua"
+                        onPress={() => handleTransferToStreet(p.id, 'bancada')}
+                        variant="secondary"
+                        style={{ flex: 1 }}
+                        disabled={streetUsers.length === 0}
+                      />
+                    </View>
+                  ) : (
+                    <Button title="Retirar do geral" onPress={() => handleTransferToStreet(p.id, 'bancada')} />
+                  )}
                 </View>
               </Card>
             </View>

@@ -1,12 +1,14 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Alert, ScrollView, Text, TouchableOpacity, View, KeyboardAvoidingView, Platform, Keyboard, TouchableWithoutFeedback, NativeSyntheticEvent, TextInputFocusEventData } from 'react-native';
+import { Alert, ScrollView, Text, TouchableOpacity, View, KeyboardAvoidingView, Platform, Keyboard, TouchableWithoutFeedback } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../routes';
 import Input from '../components/Input';
 import Button from '../components/Button';
 import PasswordInput from '../components/PasswordInput';
+import BymenLoadingOverlay from '../components/BymenLoadingOverlay';
 import { changeUserPassword, getCurrentUser, saveCurrentUserProfile } from '../services/api';
+import { createKeyboardFocusHandler } from '../utils/keyboardFocus';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ConfiguracoesUsuario'>;
 
@@ -21,6 +23,7 @@ const USER_SETTINGS_KEY = 'bymen_user_settings';
 
 export default function ConfiguracoesUsuarioScreen({ navigation }: Props) {
   const scrollRef = useRef<ScrollView>(null);
+  const handleFieldFocus = createKeyboardFocusHandler(scrollRef, 24);
   const [nome, setNome] = useState('');
   const [email, setEmail] = useState('');
   const [telefone, setTelefone] = useState('');
@@ -29,13 +32,6 @@ export default function ConfiguracoesUsuarioScreen({ navigation }: Props) {
   const [confirmarSenha, setConfirmarSenha] = useState('');
   const [receberNotificacoes, setReceberNotificacoes] = useState(true);
   const [loading, setLoading] = useState(false);
-
-  function handleFieldFocus(event: NativeSyntheticEvent<TextInputFocusEventData>) {
-    const target = event.nativeEvent.target;
-    setTimeout(() => {
-      (scrollRef.current as any)?.scrollResponderScrollNativeHandleToKeyboard(target, 120, true);
-    }, 40);
-  }
 
   useEffect(() => {
     async function loadSettings() {
@@ -232,6 +228,7 @@ export default function ConfiguracoesUsuarioScreen({ navigation }: Props) {
           disabled={loading}
         />
       </ScrollView>
+      <BymenLoadingOverlay visible={loading} label="Salvando configurações..." />
       </KeyboardAvoidingView>
     </TouchableWithoutFeedback>
   );

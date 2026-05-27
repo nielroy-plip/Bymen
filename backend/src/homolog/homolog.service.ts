@@ -13,12 +13,53 @@ import { SaveMeasurementDto } from './dto/save-measurement.dto';
 import { StockMovementDto } from './dto/stock-movement.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { UpdateUserProfileDto } from './dto/update-user-profile.dto';
+import { UpdateUserRoleDto } from './dto/update-user-role.dto';
 import * as bcrypt from 'bcrypt';
 import { createHash } from 'crypto';
+
+type AppRole = 'GESTOR' | 'SUPERVISOR' | 'VENDEDOR';
 
 @Injectable()
 export class HomologService {
   constructor(private readonly prisma: PrismaService) {}
+
+  private normalizeRole(rawRole?: string): AppRole {
+    const normalized = String(rawRole || '').trim().toLowerCase();
+
+    if (
+      normalized === 'gestor' ||
+      normalized === 'admin' ||
+      normalized === 'administrador' ||
+      normalized === 'manager'
+    ) {
+      return 'GESTOR';
+    }
+
+    if (
+      normalized === 'supervisor' ||
+      normalized === 'coordenador' ||
+      normalized === 'coodenador' ||
+      normalized === 'coordinator'
+    ) {
+      return 'SUPERVISOR';
+    }
+
+    return 'VENDEDOR';
+  }
+
+  private async ensureGestor(actorEmail?: string) {
+    const normalizedActorEmail = String(actorEmail || '').trim().toLowerCase();
+    if (!normalizedActorEmail) {
+      throw new UnauthorizedException('Apenas o perfil Gestor pode realizar esta ação');
+    }
+
+    const actor = await this.prisma.user.findUnique({ where: { email: normalizedActorEmail } });
+    if (!actor || this.normalizeRole(actor.role) !== 'GESTOR') {
+      throw new UnauthorizedException('Apenas o perfil Gestor pode realizar esta ação');
+    }
+
+    return actor;
+  }
 
   async registerUser(dto: RegisterUserDto) {
     const email = dto.email.trim().toLowerCase();
@@ -45,7 +86,7 @@ export class HomologService {
         username,
         phone: dto.phone?.trim() || null,
         passwordHash,
-        role: dto.role?.trim() || 'USER',
+        role: this.normalizeRole(dto.role),
       },
       select: {
         id: true,
@@ -97,7 +138,7 @@ export class HomologService {
       email: user.email,
       username: user.username,
       phone: user.phone,
-      role: user.role,
+      role: this.normalizeRole(user.role),
     };
   }
 
@@ -132,6 +173,71 @@ export class HomologService {
     });
 
     return updated;
+  }
+
+  async listUsers(actorEmail?: string) {
+    await this.ensureGestor(actorEmail);
+
+    const users = await this.prisma.user.findMany({
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true,
+        email: true,
+        username: true,
+        phone: true,
+        role: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+
+    return users.map((user) => ({
+      ...user,
+      role: this.normalizeRole(user.role),
+    }));
+  }
+
+  async updateUserRole(dto: UpdateUserRoleDto) {
+    const actorEmail = dto.actorEmail.trim().toLowerCase();
+    const targetEmail = dto.targetEmail.trim().toLowerCase();
+    const normalizedRole = this.normalizeRole(dto.role);
+
+    await this.ensureGestor(actorEmail);
+
+    const targetUser = await this.prisma.user.findUnique({ where: { email: targetEmail } });
+    if (!targetUser) {
+      throw new NotFoundException('Usuário alvo não encontrado');
+    }
+
+    const updatedUser = await this.prisma.user.update({
+      where: { id: targetUser.id },
+      data: { role: normalizedRole },
+      select: {
+        id: true,
+        email: true,
+        username: true,
+        phone: true,
+        role: true,
+        updatedAt: true,
+      },
+    });
+
+    await this.prisma.auditLog.create({
+      data: {
+        action: 'USER_ROLE_UPDATED',
+        userId: actorEmail,
+        details: JSON.stringify({
+          actorEmail,
+          targetEmail,
+          role: normalizedRole,
+        }),
+      },
+    });
+
+    return {
+      ...updatedUser,
+      role: this.normalizeRole(updatedUser.role),
+    };
   }
 
   async changePassword(dto: ChangePasswordDto) {

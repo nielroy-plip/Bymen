@@ -1,19 +1,21 @@
 import 'react-native-gesture-handler';
-import React, { useEffect } from 'react';
+import React from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { enableFreeze, enableScreens } from 'react-native-screens';
 import Routes from './src/routes';
-import { setupNotifications } from './src/services/notifications';
+import AppAlertProvider from './src/components/AppAlertProvider';
+// [EXPO GO] expo-notifications desativado para testes no Expo Go
+// import { setupNotifications } from './src/services/notifications';
 
 enableScreens(true);
 enableFreeze(true);
 
 export default function App() {
-  useEffect(() => {
-    setupNotifications().catch(() => undefined);
-  }, []);
+  // useEffect(() => {
+  //   setupNotifications().catch(() => undefined);
+  // }, []);
 
   const navTheme = {
     ...DefaultTheme,
@@ -27,9 +29,11 @@ export default function App() {
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <NavigationContainer theme={navTheme}>
-        <Routes />
-      </NavigationContainer>
+      <AppAlertProvider>
+        <NavigationContainer theme={navTheme}>
+          <Routes />
+        </NavigationContainer>
+      </AppAlertProvider>
       <StatusBar style="auto" />
     </GestureHandlerRootView>
   );

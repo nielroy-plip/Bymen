@@ -5,8 +5,11 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
 import { RootStackParamList } from '../routes';
 import Button from '../components/Button';
-import { listMeasurements, listProducts, listSyncPending, listSales, Measurement, Sale, SyncPendingItem } from '../services/api';
-import { notifySyncPending } from '../services/notifications';
+import { listMeasurements, listProducts, listSyncPending, listSales, Measurement, Sale, SyncPendingItem, getCurrentUser } from '../services/api';
+import { canAccessGeneralSettings, getUserAppRole } from '../services/access';
+import { getProductCriticalThreshold, getStockCriticalThresholds } from '../services/stockCritical';
+// [EXPO GO] expo-notifications desativado para testes no Expo Go
+// import { notifySyncPending } from '../services/notifications';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Dashboard'>;
 
@@ -15,22 +18,29 @@ export default function DashboardScreen({ navigation }: Props) {
   const [sales, setSales] = useState<Sale[]>([]);
   const [syncPending, setSyncPending] = useState<SyncPendingItem[]>([]);
   const [criticalStockCount, setCriticalStockCount] = useState(0);
-  const [criticalStockItems, setCriticalStockItems] = useState<Array<{ id: string; nome: string; linha: string; estoque: number }>>([]);
+  const [criticalStockItems, setCriticalStockItems] = useState<Array<{ id: string; nome: string; linha: string; estoque: number; limite: number }>>([]);
+  const [isGestor, setIsGestor] = useState(false);
 
   const loadData = useCallback(async () => {
-      const [ms, vendas, pendings, products] = await Promise.all([
+      const [ms, vendas, pendings, products, user, thresholds] = await Promise.all([
         listMeasurements(),
         listSales(),
         listSyncPending(),
         listProducts(),
+        getCurrentUser(),
+        getStockCriticalThresholds(),
       ]);
       setMeasurements(ms);
       setSales(vendas);
       setSyncPending(pendings);
-      notifySyncPending(pendings.length).catch(() => undefined);
+      setIsGestor(canAccessGeneralSettings(getUserAppRole(user)));
+      // notifySyncPending(pendings.length).catch(() => undefined);
       const critical = products
-        .filter((p: any) => (p.estoque ?? 0) <= 10)
-        .map((p: any) => ({ id: p.id, nome: p.nome, linha: p.linha ?? '-', estoque: p.estoque ?? 0 }))
+        .map((p: any) => {
+          const limite = getProductCriticalThreshold(p.id, thresholds);
+          return { id: p.id, nome: p.nome, linha: p.linha ?? '-', estoque: p.estoque ?? 0, limite };
+        })
+        .filter((p: any) => (p.estoque ?? 0) <= (p.limite ?? 10))
         .sort((a: any, b: any) => a.estoque - b.estoque);
       setCriticalStockCount(critical.length);
       setCriticalStockItems(critical);
@@ -123,6 +133,11 @@ export default function DashboardScreen({ navigation }: Props) {
       onPress: () => navigation.navigate('HistoricoMedicoes'),
     },
     {
+      title: 'Rel. Vendedor',
+      icon: 'trending-up-outline' as const,
+      onPress: () => navigation.navigate('RelatorioVendedor'),
+    },
+    {
       title: 'Pendências Sync',
       icon: 'sync-outline' as const,
       onPress: () => navigation.navigate('PendenciasSync'),
@@ -137,7 +152,27 @@ export default function DashboardScreen({ navigation }: Props) {
       icon: 'settings-outline' as const,
       onPress: () => navigation.navigate('ConfiguracoesUsuario'),
     },
+    ...(isGestor ? [{
+      title: 'Usuários',
+      icon: 'people-circle-outline' as const,
+      onPress: () => navigation.navigate('GerenciarUsuarios'),
+    }, {
+      title: 'Estoque Rua',
+      icon: 'trail-sign-outline' as const,
+      onPress: () => navigation.navigate('RelatorioEstoqueRua'),
+    }] : []),
   ];
+
+  const menuItems = isGestor
+    ? [
+        ...items,
+        {
+          title: 'Config. Gerais',
+          icon: 'options-outline' as const,
+          onPress: () => navigation.navigate('ConfiguracoesGerais'),
+        },
+      ]
+    : items;
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
@@ -182,7 +217,7 @@ export default function DashboardScreen({ navigation }: Props) {
             <Text style={{ color: '#111827', fontSize: 20, fontWeight: '700', marginTop: 4 }}>{kpis.criticalStock}</Text>
             {criticalStockItems.slice(0, 3).map((item) => (
               <Text key={item.id} style={{ color: '#92400E', fontSize: 11, marginTop: 2 }} numberOfLines={1}>
-                • {item.nome} {item.linha !== '-' ? `(${item.linha})` : ''} ({item.estoque})
+                • {item.nome} {item.linha !== '-' ? `(${item.linha})` : ''} ({item.estoque}/{item.limite})
               </Text>
             ))}
             {criticalStockItems.length > 3 && (
@@ -197,7 +232,7 @@ export default function DashboardScreen({ navigation }: Props) {
         </View>
 
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' }}>
-          {items.map((item) => (
+          {menuItems.map((item) => (
             <View
               key={item.title}
               style={{
@@ -220,7 +255,7 @@ export default function DashboardScreen({ navigation }: Props) {
               />
             </View>
           ))}
-          {items.length % 2 !== 0 && <View style={{ width: '48%' }} />}
+          {menuItems.length % 2 !== 0 && <View style={{ width: '48%' }} />}
         </View>
       </ScrollView>
     </SafeAreaView>

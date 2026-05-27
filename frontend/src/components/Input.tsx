@@ -1,6 +1,5 @@
 import React from 'react';
-import { TextInput, View, Text, TextInputProps } from 'react-native';
-import { useResponsive } from '../hooks/useResponsive';
+import { Dimensions, TextInput, View, Text, TextInputProps } from 'react-native';
 
 type Props = {
   label?: string;
@@ -10,7 +9,14 @@ type Props = {
 } & TextInputProps;
 
 export default function Input({ label, value, onChangeText, style, ...rest }: Props) {
-  const { isTablet, inputHeight, fontSize } = useResponsive();
+  const { width } = Dimensions.get('window');
+  const isTablet = width >= 768;
+  const fontSize = {
+    small: isTablet ? 14 : 12,
+    base: isTablet ? 18 : 16,
+    large: isTablet ? 24 : 20,
+    xlarge: isTablet ? 32 : 24,
+  };
   const bigInputHeight = isTablet ? 72 : 60;
   const bigFontSize = isTablet ? 22 : 20;
   

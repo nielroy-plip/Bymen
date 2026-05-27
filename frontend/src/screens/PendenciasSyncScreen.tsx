@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { View, Text, ScrollView, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, ScrollView, Alert } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../routes';
 import Button from '../components/Button';
@@ -9,7 +9,10 @@ import {
   updateMeasurementSyncStatus,
   SyncPendingItem,
 } from '../services/api';
-import { notifySyncPending, resetSyncPendingNotificationState } from '../services/notifications';
+import BymenLoader from '../components/BymenLoader';
+import BymenLoadingOverlay from '../components/BymenLoadingOverlay';
+// [EXPO GO] expo-notifications desativado para testes no Expo Go
+// import { notifySyncPending, resetSyncPendingNotificationState } from '../services/notifications';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'PendenciasSync'>;
 
@@ -23,9 +26,9 @@ export default function PendenciasSyncScreen({ navigation }: Props) {
     const queue = await listSyncPending();
     setItems(queue);
     if (queue.length === 0) {
-      resetSyncPendingNotificationState().catch(() => undefined);
+      // resetSyncPendingNotificationState().catch(() => undefined);
     } else {
-      notifySyncPending(queue.length).catch(() => undefined);
+      // notifySyncPending(queue.length).catch(() => undefined);
     }
     setLoading(false);
   }, []);
@@ -158,8 +161,7 @@ export default function PendenciasSyncScreen({ navigation }: Props) {
 
         {loading ? (
           <View style={{ marginTop: 24, alignItems: 'center' }}>
-            <ActivityIndicator color="#3B82F6" />
-            <Text style={{ marginTop: 8, color: '#6B7280' }}>Carregando pendências...</Text>
+            <BymenLoader compact label="Carregando pendências..." />
           </View>
         ) : items.length === 0 ? (
           <Text style={{ color: '#6B7280', fontStyle: 'italic' }}>Nenhuma pendência no momento.</Text>
@@ -192,6 +194,10 @@ export default function PendenciasSyncScreen({ navigation }: Props) {
           ))
         )}
       </ScrollView>
+      <BymenLoadingOverlay
+        visible={retryingAll || Boolean(retryingId)}
+        label={retryingAll ? 'Reenviando pendências...' : 'Reenviando pendência...'}
+      />
     </View>
   );
 }

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { View, Text, ScrollView, Alert, TextInput, KeyboardAvoidingView, Platform, Keyboard, TouchableWithoutFeedback } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../routes';
@@ -7,10 +7,13 @@ import Card from '../components/Card';
 import { PRODUCTS } from '../data/products';
 import { saveMeasurement } from '../services/api';
 import { formatDateTime } from '../utils/format';
+import { createKeyboardFocusHandler } from '../utils/keyboardFocus';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ImportarEstoque'>;
 
 export default function ImportarEstoqueScreen({ navigation }: Props) {
+  const scrollRef = useRef<ScrollView>(null);
+  const handleFieldFocus = createKeyboardFocusHandler(scrollRef, 24);
   const [csvText, setCsvText] = useState('');
   const [clientName, setClientName] = useState('');
   const [clientPhone, setClientPhone] = useState('');
@@ -80,7 +83,7 @@ export default function ImportarEstoqueScreen({ navigation }: Props) {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 72 : 0}
       >
-      <ScrollView contentContainerStyle={{ padding: 24 }} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
+      <ScrollView ref={scrollRef} contentContainerStyle={{ padding: 24 }} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
         <Text style={{ fontSize: 24, fontWeight: '700', color: '#111827', marginBottom: 16 }}>Importar Estoque Cliente</Text>
         <Card>
           <Text style={{ fontSize: 16, fontWeight: '600', color: '#111827', marginBottom: 8 }}>Dados do Cliente</Text>
@@ -95,6 +98,7 @@ export default function ImportarEstoqueScreen({ navigation }: Props) {
             placeholder="Nome do Cliente"
             value={clientName}
             onChangeText={setClientName}
+            onFocus={handleFieldFocus}
           />
           <TextInput
             style={{
@@ -107,6 +111,7 @@ export default function ImportarEstoqueScreen({ navigation }: Props) {
             placeholder="Telefone (opcional)"
             value={clientPhone}
             onChangeText={setClientPhone}
+            onFocus={handleFieldFocus}
             keyboardType="phone-pad"
           />
         </Card>
@@ -129,6 +134,7 @@ export default function ImportarEstoqueScreen({ navigation }: Props) {
             placeholder="Cole o conteúdo da planilha aqui..."
             value={csvText}
             onChangeText={setCsvText}
+            onFocus={handleFieldFocus}
             multiline
           />
         </Card>

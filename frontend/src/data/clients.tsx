@@ -4,8 +4,11 @@ export type Client = {
   cnpjCpf: string;
   cep?: string;
   endereco: string;
+  numero?: string;
+  complemento?: string;
   responsavel: string;
   telefone: string;
+  email?: string;
   operationMode?: 'CONSIGNADO' | 'VENDA';
 };
 

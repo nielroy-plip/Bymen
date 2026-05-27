@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { View, Text, FlatList, ActivityIndicator, Pressable, KeyboardAvoidingView, Platform, Keyboard, TouchableWithoutFeedback } from 'react-native';
+import { View, Text, FlatList, Pressable, KeyboardAvoidingView, Platform, Keyboard, TouchableWithoutFeedback } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../routes';
 import { Client } from '../data/clients';
@@ -12,10 +13,24 @@ import OperationContextHeader from '../components/OperationContextHeader';
 import { formatCurrency, formatDateTime } from '../utils/format';
 import { sum } from '../utils/calculate';
 import { useResponsive } from '../hooks/useResponsive';
+import { sortByCatalogOrder } from '../utils/productOrder';
+import BymenLoader from '../components/BymenLoader';
 import { Ionicons } from '@expo/vector-icons';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'CriarMedicao'>;
+
+const MEDICAO_EXCLUDED_NAME_PATTERNS = ['esfoliante', 'leave-in', 'leave in', 'grooming'];
+const MEDICAO_AVG_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+
+function getMedicaoAvgCacheKey(clientId: string) {
+  return `medicao_avg_sales:${clientId}`;
+}
+
+function shouldExcludeFromMedicao(name: string) {
+  const normalized = String(name || '').toLowerCase();
+  return MEDICAO_EXCLUDED_NAME_PATTERNS.some((pattern) => normalized.includes(pattern));
+}
 
 export default function CriarMedicaoScreen({ navigation, route }: Props) {
   const [bonusOpen, setBonusOpen] = useState(false);
@@ -87,9 +102,12 @@ export default function CriarMedicaoScreen({ navigation, route }: Props) {
   }
 
   useEffect(() => {
+    let isActive = true;
+
     async function loadData() {
       const clients = await listClients();
       const c = clients.find((x) => x.id === clientId) || clients[0];
+      if (!isActive) return;
       setClient(c);
 
       if (!c) {
@@ -99,36 +117,16 @@ export default function CriarMedicaoScreen({ navigation, route }: Props) {
       setLoading(true);
 
       try {
-        const [p, measurements] = await Promise.all([
-          listProductsForClient(c.id),
-          listMeasurements(),
-        ]);
+        const p = await listProductsForClient(c.id);
+        if (!isActive) return;
 
-        setProducts(p);
-
-        const now = new Date();
-        const startDate = new Date(now.getFullYear(), now.getMonth() - 2, 1);
-        const productTotals: Record<string, number> = {};
-
-        measurements
-          .filter((m) => m.clientId === c.id)
-          .forEach((m) => {
-            const parsed = parseMeasurementDate(m.dateTime || '');
-            if (!parsed || parsed < startDate) return;
-
-            (m.medicaoRows || []).forEach((row: any) => {
-              productTotals[row.id] = (productTotals[row.id] || 0) + Number(row.vendidos || 0);
-            });
-          });
-
-        const avgMap: Record<string, number> = {};
-        p.forEach((prod) => {
-          avgMap[prod.id] = Number(((productTotals[prod.id] || 0) / 3).toFixed(1));
-        });
-        setAverageSalesByProduct(avgMap);
+        const sortedProducts = sortByCatalogOrder(
+          p.filter((prod) => !shouldExcludeFromMedicao(prod.nome)),
+        );
+        setProducts(sortedProducts);
 
         const medicaoInicial: Record<string, MedicaoRow> = {};
-        p.forEach((prod) => {
+        sortedProducts.forEach((prod) => {
           medicaoInicial[prod.id] = {
             id: prod.id,
             nome: prod.nome,
@@ -146,12 +144,79 @@ export default function CriarMedicaoScreen({ navigation, route }: Props) {
           };
         });
         setMedicaoRows(medicaoInicial);
-      } finally {
+
+        setLoading(false);
+
+        // Hidrata com cache para mostrar sugestões instantaneamente na abertura.
+        void (async () => {
+          try {
+            const cacheKey = getMedicaoAvgCacheKey(c.id);
+            const cachedRaw = await AsyncStorage.getItem(cacheKey);
+            const cached = cachedRaw ? JSON.parse(cachedRaw) : null;
+
+            if (
+              cached &&
+              typeof cached.savedAt === 'number' &&
+              cached.items &&
+              typeof cached.items === 'object' &&
+              Date.now() - cached.savedAt <= MEDICAO_AVG_CACHE_TTL_MS &&
+              isActive
+            ) {
+              setAverageSalesByProduct(cached.items as Record<string, number>);
+            }
+          } catch {
+            // Ignora cache inválido para não interromper o carregamento.
+          }
+
+          try {
+            const measurements = await listMeasurements();
+            if (!isActive) return;
+
+            const now = new Date();
+            const startDate = new Date(now.getFullYear(), now.getMonth() - 2, 1);
+            const productTotals: Record<string, number> = {};
+
+            measurements
+              .filter((m) => m.clientId === c.id)
+              .forEach((m) => {
+                const parsed = parseMeasurementDate(m.dateTime || '');
+                if (!parsed || parsed < startDate) return;
+
+                (m.medicaoRows || []).forEach((row: any) => {
+                  productTotals[row.id] = (productTotals[row.id] || 0) + Number(row.vendidos || 0);
+                });
+              });
+
+            const avgMap: Record<string, number> = {};
+            sortedProducts.forEach((prod) => {
+              avgMap[prod.id] = Number(((productTotals[prod.id] || 0) / 3).toFixed(1));
+            });
+
+            setAverageSalesByProduct(avgMap);
+
+            const cacheKey = getMedicaoAvgCacheKey(c.id);
+            await AsyncStorage.setItem(
+              cacheKey,
+              JSON.stringify({
+                savedAt: Date.now(),
+                items: avgMap,
+              }),
+            );
+          } catch {
+            // Mantém a tela fluida mesmo se a média histórica falhar.
+          }
+        })();
+      } catch {
+        if (!isActive) return;
         setLoading(false);
       }
     }
 
     loadData();
+
+    return () => {
+      isActive = false;
+    };
   }, [clientId]);
 
   // ========================================
@@ -201,12 +266,23 @@ export default function CriarMedicaoScreen({ navigation, route }: Props) {
   // HANDLERS: ABA BANCADA
   // ========================================
   const handleBancadaRowChange = useCallback((row: BancadaRow) => {
-    setBancadaRows((prev) => ({ ...prev, [row.id]: row }));
+    setBancadaRows((prev) => {
+      const current = prev[row.id];
+      const same =
+        current &&
+        current.quantidadeComprada === row.quantidadeComprada &&
+        current.valorTotal === row.valorTotal &&
+        current.preco === row.preco &&
+        current.faixaPrecoAplicada === row.faixaPrecoAplicada;
+
+      if (same) return prev;
+      return { ...prev, [row.id]: row };
+    });
   }, []);
 
-  const bancadaArray = useMemo(() => Object.values(bancadaRows), [bancadaRows]);
+  const bancadaArray = useMemo(() => sortByCatalogOrder(Object.values(bancadaRows)), [bancadaRows]);
   const valorBancada = useMemo(() => sum(bancadaArray.map((r) => r.valorTotal)), [bancadaArray]);
-  const bonusArray = useMemo(() => Object.values(bonusRows), [bonusRows]);
+  const bonusArray = useMemo(() => sortByCatalogOrder(Object.values(bonusRows)), [bonusRows]);
   const valorBonus = useMemo(() => sum(bonusArray.map((r) => r.valorTotal)), [bonusArray]);
   const bonusQuantidade = useMemo(
     () => bonusArray.reduce((acc, r) => acc + (r.quantidadeComprada || 0), 0),
@@ -214,17 +290,17 @@ export default function CriarMedicaoScreen({ navigation, route }: Props) {
   );
 
   const bancadaProducts = useMemo(
-    () => PRODUTOS_BANCADA.map((p) => ({ ...p, precoSugestao: p.precoSugestao ?? 0 })),
+    () => sortByCatalogOrder(PRODUTOS_BANCADA.map((p) => ({ ...p, precoSugestao: p.precoSugestao ?? 0 }))),
     [],
   );
 
   const bonusProducts = useMemo(
     () =>
-      PRODUTOS_BANCADA.map((p) => ({
+      sortByCatalogOrder(PRODUTOS_BANCADA.map((p) => ({
         ...p,
         id: `${p.id}-bonus`,
         precoSugestao: p.precoSugestao ?? 0,
-      })),
+      }))),
     [],
   );
 
@@ -232,8 +308,26 @@ export default function CriarMedicaoScreen({ navigation, route }: Props) {
   // HANDLER: ABA BONIFICAÇÃO
   // ========================================
   const handleBonusRowChange = useCallback((row: BancadaRow) => {
-    setBonusRows((prev) => ({ ...prev, [row.id]: row }));
+    setBonusRows((prev) => {
+      const current = prev[row.id];
+      const same =
+        current &&
+        current.quantidadeComprada === row.quantidadeComprada &&
+        current.valorTotal === row.valorTotal &&
+        current.preco === row.preco &&
+        current.faixaPrecoAplicada === row.faixaPrecoAplicada;
+
+      if (same) return prev;
+      return { ...prev, [row.id]: row };
+    });
   }, []);
+
+  const renderBonusItem = useCallback(
+    ({ item }: { item: typeof bonusProducts[number] }) => (
+      <BancadaRowComponent product={item} onChange={handleBonusRowChange} hideValues={true} />
+    ),
+    [handleBonusRowChange],
+  );
 
   // ========================================
   // TOTAL GERAL
@@ -348,55 +442,6 @@ export default function CriarMedicaoScreen({ navigation, route }: Props) {
           </Text>
         </View>
 
-        <View style={{ marginTop: isTablet ? 24 : 16 }}>
-          <Pressable
-            onPress={() => setBonusOpen((open) => !open)}
-            style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              backgroundColor: '#D1FAE5',
-              borderRadius: isTablet ? 12 : 8,
-              padding: isTablet ? 16 : 12,
-              marginBottom: isTablet ? 8 : 6
-            }}
-          >
-            <Text style={{ fontSize: fontSize.base, color: '#059669', fontWeight: '700' }}>
-              Bonificação
-            </Text>
-            <Text style={{ color: '#059669', fontWeight: '700', fontSize: fontSize.base }}>
-              {bonusOpen ? '▲' : '▼'}
-            </Text>
-          </Pressable>
-
-          {bonusOpen && (
-            <>
-              {bonusProducts.map((p) => (
-                <BancadaRowComponent key={p.id} product={p} onChange={handleBonusRowChange} hideValues={true} />
-              ))}
-
-              <View
-                style={{
-                  backgroundColor: '#D1FAE5',
-                  borderRadius: isTablet ? 12 : 8,
-                  padding: isTablet ? 16 : 12,
-                  marginTop: isTablet ? 12 : 8,
-                  flexDirection: 'row',
-                  justifyContent: 'space-between',
-                  alignItems: 'center'
-                }}
-              >
-                <Text style={{ fontSize: fontSize.base, fontWeight: '600', color: '#059669' }}>
-                  Quantidade Bonificada:
-                </Text>
-                <Text style={{ fontSize: fontSize.large, fontWeight: '700', color: '#059669' }}>
-                  {bonusQuantidade}
-                </Text>
-              </View>
-            </>
-          )}
-        </View>
-
         <View
           style={{
             backgroundColor: '#F9FAFB',
@@ -434,14 +479,71 @@ export default function CriarMedicaoScreen({ navigation, route }: Props) {
       isTablet,
       fontSize,
       valorBancada,
-      bonusOpen,
-      bonusProducts,
-      handleBonusRowChange,
       bonusQuantidade,
       valorMedicao,
       totalGeral,
       handleCreateMedicao,
     ],
+  );
+
+  const bonusSection = useMemo(
+    () => (
+      <View style={{ paddingHorizontal: padding }}>
+        <View style={{ marginBottom: isTablet ? 10 : 8 }}>
+          <Pressable
+            onPress={() => setBonusOpen((open) => !open)}
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              backgroundColor: '#D1FAE5',
+              borderRadius: isTablet ? 12 : 8,
+              padding: isTablet ? 16 : 12,
+            }}
+          >
+            <Text style={{ fontSize: fontSize.base, color: '#059669', fontWeight: '700' }}>Bonificação</Text>
+            <Text style={{ color: '#059669', fontWeight: '700', fontSize: fontSize.base }}>
+              {bonusOpen ? '▲' : '▼'}
+            </Text>
+          </Pressable>
+        </View>
+
+        {bonusOpen && (
+          <>
+            <FlatList
+              data={bonusProducts}
+              keyExtractor={(item) => item.id}
+              renderItem={renderBonusItem}
+              scrollEnabled={false}
+              keyboardShouldPersistTaps="handled"
+              initialNumToRender={2}
+              maxToRenderPerBatch={2}
+              windowSize={2}
+              removeClippedSubviews={false}
+            />
+
+            <View
+              style={{
+                backgroundColor: '#D1FAE5',
+                borderRadius: isTablet ? 12 : 8,
+                padding: isTablet ? 16 : 12,
+                marginTop: isTablet ? 12 : 8,
+                marginBottom: isTablet ? 8 : 6,
+                flexDirection: 'row',
+                justifyContent: 'space-between',
+                alignItems: 'center'
+              }}
+            >
+              <Text style={{ fontSize: fontSize.base, fontWeight: '600', color: '#059669' }}>
+                Quantidade Bonificada:
+              </Text>
+              <Text style={{ fontSize: fontSize.large, fontWeight: '700', color: '#059669' }}>{bonusQuantidade}</Text>
+            </View>
+          </>
+        )}
+      </View>
+    ),
+    [padding, isTablet, fontSize, bonusOpen, bonusProducts, renderBonusItem, bonusQuantidade],
   );
 
   return (
@@ -522,46 +624,55 @@ export default function CriarMedicaoScreen({ navigation, route }: Props) {
       {/* ================================================ */}
       {/* CONTEÚDO DAS ABAS                               */}
       {/* ================================================ */}
-      {activeTab === 'medicao' ? (
-        <FlatList
-          data={products}
-          keyExtractor={(item) => item.id}
-          renderItem={renderMedicaoItem}
-          ListHeaderComponent={
-            <>
-              {loading ? <ActivityIndicator /> : null}
-              <Text style={{ fontSize: fontSize.base, color: '#6B7280', marginBottom: isTablet ? 12 : 8 }}>
-                Produtos vendidos aos clientes finais
-              </Text>
-            </>
-          }
-          ListFooterComponent={medicaoFooter}
-          contentContainerStyle={{ padding, paddingBottom: 120 }}
-          keyboardShouldPersistTaps="handled"
-          keyboardDismissMode="on-drag"
-          initialNumToRender={6}
-          maxToRenderPerBatch={6}
-          windowSize={7}
-          updateCellsBatchingPeriod={50}
-          removeClippedSubviews
-        />
-      ) : (
-        <FlatList
-          data={bancadaProducts}
-          keyExtractor={(item) => item.id}
-          renderItem={renderBancadaItem}
-          ListHeaderComponent={loading ? <ActivityIndicator /> : null}
-          ListFooterComponent={bancadaFooter}
-          contentContainerStyle={{ padding, paddingBottom: 120 }}
-          keyboardShouldPersistTaps="handled"
-          keyboardDismissMode="on-drag"
-          initialNumToRender={6}
-          maxToRenderPerBatch={6}
-          windowSize={7}
-          updateCellsBatchingPeriod={50}
-          removeClippedSubviews
-        />
-      )}
+      <View style={{ flex: 1 }}>
+        {activeTab === 'medicao' ? (
+          <FlatList
+            style={{ flex: 1 }}
+            data={products}
+            keyExtractor={(item) => item.id}
+            renderItem={renderMedicaoItem}
+            ListHeaderComponent={
+              <>
+                {loading ? <BymenLoader compact label="Carregando catálogo..." /> : null}
+                <Text style={{ fontSize: fontSize.base, color: '#6B7280', marginBottom: isTablet ? 12 : 8 }}>
+                  Produtos vendidos aos clientes finais
+                </Text>
+              </>
+            }
+            ListFooterComponent={medicaoFooter}
+            contentContainerStyle={{ padding, paddingBottom: 120 }}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
+            initialNumToRender={3}
+            maxToRenderPerBatch={3}
+            windowSize={3}
+            updateCellsBatchingPeriod={50}
+            removeClippedSubviews={false}
+            scrollEventThrottle={16}
+          />
+        ) : (
+          <>
+            {bonusSection}
+            <FlatList
+              style={{ flex: 1 }}
+              data={bancadaProducts}
+              keyExtractor={(item) => item.id}
+              renderItem={renderBancadaItem}
+              ListHeaderComponent={loading ? <BymenLoader compact label="Carregando bancada..." /> : null}
+              ListFooterComponent={bancadaFooter}
+              contentContainerStyle={{ padding, paddingBottom: 120 }}
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="on-drag"
+              initialNumToRender={3}
+              maxToRenderPerBatch={3}
+              windowSize={3}
+              updateCellsBatchingPeriod={50}
+              removeClippedSubviews={false}
+              scrollEventThrottle={16}
+            />
+          </>
+        )}
+      </View>
       </KeyboardAvoidingView>
     </TouchableWithoutFeedback>
   );

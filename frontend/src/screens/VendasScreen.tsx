@@ -6,8 +6,10 @@ import Button from '../components/Button';
 import Card from '../components/Card';
 import Input from '../components/Input';
 import { Client } from '../data/clients';
-import { listClients, listProducts, SaleItem } from '../services/api';
+import { getCurrentUser, listClients, listProducts, listProductsForStreetUser, SaleItem } from '../services/api';
 import { formatCurrency } from '../utils/format';
+import { sortByCatalogOrder } from '../utils/productOrder';
+import { getUserAppRole } from '../services/access';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Vendas'>;
 
@@ -25,29 +27,71 @@ type StockProduct = {
 
 type PromoTier = 'BASE' | 'QTD_5' | 'QTD_10';
 
+const SALE_PRICE_OVERRIDES: Record<string, { preco: number; preco5?: number; preco10?: number }> = {
+  // Linha venda
+  p1: { preco: 39.9, preco5: 37.8, preco10: 35.7 },
+  p2: { preco: 39.9, preco5: 37.8, preco10: 35.7 },
+  p3: { preco: 32.3, preco5: 30.6, preco10: 28.9 },
+  p4: { preco: 32.3, preco5: 30.6, preco10: 28.9 },
+  p5: { preco: 36.1, preco5: 34.2, preco10: 32.3 },
+  p6: { preco: 36.1, preco5: 34.2, preco10: 32.3 },
+  p7: { preco: 42.75, preco5: 40.5, preco10: 38.25 },
+  p8: { preco: 42.75, preco5: 40.5, preco10: 38.25 },
+  p9: { preco: 55.1, preco5: 52.2, preco10: 49.3 },
+  p10: { preco: 55.1, preco5: 52.2, preco10: 49.3 },
+  p11: { preco: 55.1, preco5: 52.2, preco10: 49.3 },
+  p12: { preco: 55.1, preco5: 52.2, preco10: 49.3 },
+  p13: { preco: 33.25, preco5: 31.5, preco10: 29.75 },
+  p14: { preco: 48.0, preco5: 45.6, preco10: 43.2 },
+  p15: { preco: 45.0, preco5: 42.75, preco10: 40.5 },
+  p16: { preco: 45.0, preco5: 42.75, preco10: 40.5 },
+  // Linha bancada
+  b1: { preco: 52.0 },
+  b2: { preco: 58.0 },
+  b3: { preco: 42.0 },
+  b4: { preco: 46.0 },
+  b12: { preco: 46.0 },
+};
+
 export default function VendasScreen({ navigation, route }: Props) {
   const clientId = route.params.clientId;
   const [client, setClient] = useState<Client | undefined>();
   const [products, setProducts] = useState<StockProduct[]>([]);
   const [activeTab, setActiveTab] = useState<'produtos' | 'bancada'>('produtos');
   const [quantities, setQuantities] = useState<Record<string, string>>({});
+  const [stockScopeLabel, setStockScopeLabel] = useState('Geral da empresa');
 
   useEffect(() => {
     async function loadData() {
-      const [clients, allProducts] = await Promise.all([listClients(), listProducts()]);
+      const [clients, currentUser] = await Promise.all([listClients(), getCurrentUser()]);
       setClient(clients.find((c) => c.id === clientId));
 
-      const saleProducts = allProducts.map((p: any) => ({
-          id: p.id,
-          nome: p.nome,
-          linha: p.linha,
-          cap: p.cap,
-          preco: p.preco,
-          preco5: p.preco5,
-          preco10: p.preco10,
-          precoSugestao: p.precoSugestao,
-          estoque: p.estoque ?? 0,
-        }));
+      const role = getUserAppRole(currentUser);
+      const userEmail = String(currentUser?.email || '').trim().toLowerCase();
+      const shouldUseStreetStock = (role === 'VENDEDOR' || role === 'SUPERVISOR') && userEmail.length > 0;
+
+      const allProducts = shouldUseStreetStock
+        ? await listProductsForStreetUser(userEmail)
+        : await listProducts();
+
+      setStockScopeLabel(shouldUseStreetStock ? 'Estoque na rua (seu usuário)' : 'Geral da empresa');
+
+        const saleProducts = sortByCatalogOrder(
+          allProducts.map((p: any) => {
+            const override = SALE_PRICE_OVERRIDES[String(p.id || '')];
+            return {
+              id: p.id,
+              nome: p.nome,
+              linha: p.linha,
+              cap: p.cap,
+              preco: typeof override?.preco === 'number' ? override.preco : p.preco,
+              preco5: typeof override?.preco5 === 'number' ? override.preco5 : p.preco5,
+              preco10: typeof override?.preco10 === 'number' ? override.preco10 : p.preco10,
+              precoSugestao: p.precoSugestao,
+              estoque: p.estoque ?? 0,
+            };
+          }),
+        );
 
       setProducts(saleProducts);
     }
@@ -148,6 +192,9 @@ export default function VendasScreen({ navigation, route }: Props) {
           <Text style={{ fontSize: 22, fontWeight: '700', color: '#111827', marginBottom: 4 }}>Venda</Text>
           <Text style={{ color: '#6B7280', marginBottom: 16 }}>
             Barbearia: {client?.nome || 'Carregando...'}
+          </Text>
+          <Text style={{ color: '#1D4ED8', marginBottom: 12, fontWeight: '700' }}>
+            Estoque considerado: {stockScopeLabel}
           </Text>
 
           <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>

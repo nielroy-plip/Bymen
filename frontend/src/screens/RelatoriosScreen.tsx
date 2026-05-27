@@ -1,13 +1,33 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text, ScrollView, Modal, TouchableOpacity, ActivityIndicator, useWindowDimensions, Alert } from 'react-native';
+import { View, Text, ScrollView, Modal, TouchableOpacity, useWindowDimensions, Alert, TextInput } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { listClients, listMeasurements, listProducts, listSales, Measurement, Sale } from '../services/api';
 import { Client } from '../data/clients';
 import { generateReportChartPDF } from '../services/pdf';
 import { sharePdf } from '../services/whatsapp';
 import { formatCurrency } from '../utils/format';
+import { compareByCatalogOrder, compareCatalogNames } from '../utils/productOrder';
+import BymenLoader from '../components/BymenLoader';
 
 const monthNames = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+const FILTER_ALL = '__ALL__';
+
+type ProductFilterOption = {
+  value: string;
+  label: string;
+  nome?: string;
+  linha?: string;
+};
+
+type LinhaFilter = 'TODOS' | 'WOOD' | 'OCEAN' | 'BYMEN' | 'OUTROS';
+
+const LINHA_FILTER_OPTIONS: Array<{ value: LinhaFilter; label: string }> = [
+  { value: 'TODOS', label: 'Todos' },
+  { value: 'WOOD', label: 'Wood' },
+  { value: 'OCEAN', label: 'Ocean' },
+  { value: 'BYMEN', label: 'Bymen' },
+  { value: 'OUTROS', label: 'Outros' },
+];
 
 function getMonthKey(date: Date) {
   const y = date.getFullYear();
@@ -33,6 +53,41 @@ function getLinhaColor(linha?: string) {
   return '#6B7280';
 }
 
+function buildProductFilterKey(nome?: string, linha?: string) {
+  return `${String(nome || '').trim()}::${String(linha || 'Bymen').trim()}`;
+}
+
+function buildProductFilterLabel(nome?: string, linha?: string) {
+  return `${String(nome || '').trim()} (${String(linha || 'Bymen').trim()})`;
+}
+
+function getLinhaBucket(linha?: string): LinhaFilter {
+  const normalized = String(linha || '').trim().toLowerCase();
+  if (normalized.includes('wood')) return 'WOOD';
+  if (normalized.includes('ocean')) return 'OCEAN';
+  if (normalized.includes('bymen')) return 'BYMEN';
+  return 'OUTROS';
+}
+
+function buildLinhaCounts(options: ProductFilterOption[]): Record<LinhaFilter, number> {
+  const counts: Record<LinhaFilter, number> = {
+    TODOS: 0,
+    WOOD: 0,
+    OCEAN: 0,
+    BYMEN: 0,
+    OUTROS: 0,
+  };
+
+  options.forEach((item) => {
+    if (item.value === FILTER_ALL) return;
+    const bucket = getLinhaBucket(item.linha);
+    counts[bucket] += 1;
+    counts.TODOS += 1;
+  });
+
+  return counts;
+}
+
 export default function RelatoriosScreen() {
   const { width: screenWidth } = useWindowDimensions();
   const isSmallScreen = screenWidth < 400;
@@ -46,8 +101,12 @@ export default function RelatoriosScreen() {
   const [modalFiltroMedicaoVisible, setModalFiltroMedicaoVisible] = useState(false);
   const [modalFiltroBancadaVisible, setModalFiltroBancadaVisible] = useState(false);
   const [periodo, setPeriodo] = useState<'12m' | '6m' | '3m'>('12m');
-  const [produtoFiltroMedicao, setProdutoFiltroMedicao] = useState<string>('Todos');
-  const [produtoFiltroBancada, setProdutoFiltroBancada] = useState<string>('Todos');
+  const [produtoFiltroMedicao, setProdutoFiltroMedicao] = useState<string>(FILTER_ALL);
+  const [produtoFiltroBancada, setProdutoFiltroBancada] = useState<string>(FILTER_ALL);
+  const [searchFiltroMedicao, setSearchFiltroMedicao] = useState('');
+  const [searchFiltroBancada, setSearchFiltroBancada] = useState('');
+  const [linhaFiltroMedicao, setLinhaFiltroMedicao] = useState<LinhaFilter>('TODOS');
+  const [linhaFiltroBancada, setLinhaFiltroBancada] = useState<LinhaFilter>('TODOS');
   // Feedback visual para modal
   const [modalOpening, setModalOpening] = useState(false);
   useEffect(() => {
@@ -87,35 +146,104 @@ export default function RelatoriosScreen() {
 
   const isVendaClient = selectedBarbearia?.operationMode === 'VENDA';
 
-  const produtosFiltroMedicao = useMemo(() => {
-    const names = isVendaClient
-      ? Array.from(
-          new Set(
-            sales
-              .filter((s) => (barbeariaId ? s.clientId === barbeariaId : true))
-              .flatMap((s) => s.items || [])
-              .filter((item: any) => !String(item.id || '').startsWith('b'))
-              .map((item: any) => item.nome),
-          ),
-        )
-      : Array.from(new Set(products.filter((p: any) => !String(p.id || '').startsWith('b')).map((p) => p.nome)));
-    return ['Todos', ...names];
+  const produtosFiltroMedicao = useMemo<ProductFilterOption[]>(() => {
+    const source = isVendaClient
+      ? sales
+          .filter((s) => (barbeariaId ? s.clientId === barbeariaId : true))
+          .flatMap((s) => s.items || [])
+          .filter((item: any) => !String(item.id || '').startsWith('b'))
+      : products.filter((p: any) => !String(p.id || '').startsWith('b'));
+
+    const unique = new Map<string, ProductFilterOption>();
+    source.forEach((item: any) => {
+      const nome = String(item.nome || '').trim();
+      const linha = String(item.linha || 'Bymen').trim();
+      const value = buildProductFilterKey(nome, linha);
+      if (!nome || unique.has(value)) return;
+
+      unique.set(value, {
+        value,
+        label: buildProductFilterLabel(nome, linha),
+        nome,
+        linha,
+      });
+    });
+
+    const sorted = Array.from(unique.values()).sort((a, b) => {
+      const byName = compareCatalogNames(String(a.nome || ''), String(b.nome || ''));
+      if (byName !== 0) return byName;
+      return String(a.linha || '').localeCompare(String(b.linha || ''), 'pt-BR', { sensitivity: 'base' });
+    });
+
+    return [{ value: FILTER_ALL, label: 'Todos' }, ...sorted];
   }, [isVendaClient, sales, barbeariaId, products]);
 
-  const produtosFiltroBancada = useMemo(() => {
-    const names = isVendaClient
-      ? Array.from(
-          new Set(
-            sales
-              .filter((s) => (barbeariaId ? s.clientId === barbeariaId : true))
-              .flatMap((s) => s.items || [])
-              .filter((item: any) => String(item.id || '').startsWith('b'))
-              .map((item: any) => item.nome),
-          ),
-        )
-      : Array.from(new Set(products.filter((p: any) => String(p.id || '').startsWith('b')).map((p) => p.nome)));
-    return ['Todos', ...names];
+  const produtosFiltroBancada = useMemo<ProductFilterOption[]>(() => {
+    const source = isVendaClient
+      ? sales
+          .filter((s) => (barbeariaId ? s.clientId === barbeariaId : true))
+          .flatMap((s) => s.items || [])
+          .filter((item: any) => String(item.id || '').startsWith('b'))
+      : products.filter((p: any) => String(p.id || '').startsWith('b'));
+
+    const unique = new Map<string, ProductFilterOption>();
+    source.forEach((item: any) => {
+      const nome = String(item.nome || '').trim();
+      const linha = String(item.linha || 'Bymen').trim();
+      const value = buildProductFilterKey(nome, linha);
+      if (!nome || unique.has(value)) return;
+
+      unique.set(value, {
+        value,
+        label: buildProductFilterLabel(nome, linha),
+        nome,
+        linha,
+      });
+    });
+
+    const sorted = Array.from(unique.values()).sort((a, b) => {
+      const byName = compareCatalogNames(String(a.nome || ''), String(b.nome || ''));
+      if (byName !== 0) return byName;
+      return String(a.linha || '').localeCompare(String(b.linha || ''), 'pt-BR', { sensitivity: 'base' });
+    });
+
+    return [{ value: FILTER_ALL, label: 'Todos' }, ...sorted];
   }, [isVendaClient, sales, barbeariaId, products]);
+
+  const selectedProdutoFiltroMedicaoLabel = useMemo(
+    () => produtosFiltroMedicao.find((item) => item.value === produtoFiltroMedicao)?.label || 'Todos',
+    [produtosFiltroMedicao, produtoFiltroMedicao],
+  );
+
+  const selectedProdutoFiltroBancadaLabel = useMemo(
+    () => produtosFiltroBancada.find((item) => item.value === produtoFiltroBancada)?.label || 'Todos',
+    [produtosFiltroBancada, produtoFiltroBancada],
+  );
+
+  const linhaCountsMedicao = useMemo(() => buildLinhaCounts(produtosFiltroMedicao), [produtosFiltroMedicao]);
+  const linhaCountsBancada = useMemo(() => buildLinhaCounts(produtosFiltroBancada), [produtosFiltroBancada]);
+
+  const produtosFiltroMedicaoFiltrados = useMemo(() => {
+    const term = String(searchFiltroMedicao || '').trim().toLowerCase();
+    return produtosFiltroMedicao.filter((item) => {
+      if (item.value === FILTER_ALL) return linhaFiltroMedicao === 'TODOS' && term.length === 0;
+      const bucket = getLinhaBucket(item.linha);
+      if (linhaFiltroMedicao !== 'TODOS' && bucket !== linhaFiltroMedicao) return false;
+      if (!term) return true;
+      return item.label.toLowerCase().includes(term);
+    });
+  }, [produtosFiltroMedicao, searchFiltroMedicao, linhaFiltroMedicao]);
+
+  const produtosFiltroBancadaFiltrados = useMemo(() => {
+    const term = String(searchFiltroBancada || '').trim().toLowerCase();
+    return produtosFiltroBancada.filter((item) => {
+      if (item.value === FILTER_ALL) return linhaFiltroBancada === 'TODOS' && term.length === 0;
+      const bucket = getLinhaBucket(item.linha);
+      if (linhaFiltroBancada !== 'TODOS' && bucket !== linhaFiltroBancada) return false;
+      if (!term) return true;
+      return item.label.toLowerCase().includes(term);
+    });
+  }, [produtosFiltroBancada, searchFiltroBancada, linhaFiltroBancada]);
 
   const monthWindow = useMemo(() => {
     const count = periodo === '12m' ? 12 : periodo === '6m' ? 6 : 3;
@@ -185,7 +313,7 @@ export default function RelatoriosScreen() {
   }, [salesData]);
 
   const produtosData = useMemo(() => {
-    const grouped = new Map<string, { label: string; linha: string; total: number }>();
+    const grouped = new Map<string, { nome: string; label: string; linha: string; total: number }>();
 
     filteredMeasurementsInPeriod.forEach((m) => {
       (m.medicaoRows || []).forEach((row: any) => {
@@ -193,6 +321,7 @@ export default function RelatoriosScreen() {
         const prev = grouped.get(key);
         const label = `${row.nome} (${row.linha || 'Bymen'})`;
         grouped.set(key, {
+          nome: row.nome,
           label,
           linha: row.linha || 'Bymen',
           total: Number(row.vendidos || 0) + Number(prev?.total || 0),
@@ -201,10 +330,10 @@ export default function RelatoriosScreen() {
     });
 
     let entries = Array.from(grouped.values());
-    if (produtoFiltroMedicao !== 'Todos') {
-      entries = entries.filter((item) => item.label.startsWith(`${produtoFiltroMedicao} (`));
+    if (produtoFiltroMedicao !== FILTER_ALL) {
+      entries = entries.filter((item) => buildProductFilterKey(item.nome, item.linha) === produtoFiltroMedicao);
     } else {
-      entries = entries.sort((a, b) => b.total - a.total).slice(0, 8);
+      entries = entries.sort(compareByCatalogOrder);
     }
 
     if (entries.length === 0) {
@@ -218,7 +347,7 @@ export default function RelatoriosScreen() {
   }, [filteredMeasurementsInPeriod, produtoFiltroMedicao]);
 
   const bancadaData = useMemo(() => {
-    const grouped = new Map<string, { label: string; linha: string; total: number }>();
+    const grouped = new Map<string, { nome: string; label: string; linha: string; total: number }>();
 
     filteredMeasurementsInPeriod.forEach((m) => {
       (m.bancadaRows || []).forEach((row: any) => {
@@ -226,6 +355,7 @@ export default function RelatoriosScreen() {
         const prev = grouped.get(key);
         const label = `${row.nome} (${row.linha || 'Bymen'})`;
         grouped.set(key, {
+          nome: row.nome,
           label,
           linha: row.linha || 'Bymen',
           total: Number(row.quantidadeComprada || 0) + Number(prev?.total || 0),
@@ -235,10 +365,10 @@ export default function RelatoriosScreen() {
 
     let entries = Array.from(grouped.values());
 
-    if (produtoFiltroBancada !== 'Todos') {
-      entries = entries.filter((item) => item.label.startsWith(`${produtoFiltroBancada} (`));
+    if (produtoFiltroBancada !== FILTER_ALL) {
+      entries = entries.filter((item) => buildProductFilterKey(item.nome, item.linha) === produtoFiltroBancada);
     } else {
-      entries = entries.sort((a, b) => b.total - a.total).slice(0, 8);
+      entries = entries.sort(compareByCatalogOrder);
     }
 
     return entries.map((item) => ({
@@ -248,7 +378,7 @@ export default function RelatoriosScreen() {
   }, [filteredMeasurementsInPeriod, produtoFiltroBancada]);
 
   const vendasProdutosData = useMemo(() => {
-    const grouped = new Map<string, { label: string; linha: string; total: number }>();
+    const grouped = new Map<string, { nome: string; label: string; linha: string; total: number }>();
 
     sales
       .filter((s) => (barbeariaId ? s.clientId === barbeariaId : true))
@@ -263,6 +393,7 @@ export default function RelatoriosScreen() {
           const prev = grouped.get(key);
           const label = `${item.nome} (${item.linha || 'Bymen'})`;
           grouped.set(key, {
+            nome: item.nome,
             label,
             linha: item.linha || 'Bymen',
             total: Number(item.quantidade || 0) + Number(prev?.total || 0),
@@ -271,10 +402,10 @@ export default function RelatoriosScreen() {
       });
 
     let entries = Array.from(grouped.values());
-    if (produtoFiltroMedicao !== 'Todos') {
-      entries = entries.filter((item) => item.label.startsWith(`${produtoFiltroMedicao} (`));
+    if (produtoFiltroMedicao !== FILTER_ALL) {
+      entries = entries.filter((item) => buildProductFilterKey(item.nome, item.linha) === produtoFiltroMedicao);
     } else {
-      entries = entries.sort((a, b) => b.total - a.total).slice(0, 8);
+      entries = entries.sort(compareByCatalogOrder);
     }
 
     return entries.map((item) => ({
@@ -284,7 +415,7 @@ export default function RelatoriosScreen() {
   }, [sales, barbeariaId, monthWindow, produtoFiltroMedicao]);
 
   const vendasBancadaData = useMemo(() => {
-    const grouped = new Map<string, { label: string; linha: string; total: number }>();
+    const grouped = new Map<string, { nome: string; label: string; linha: string; total: number }>();
 
     sales
       .filter((s) => (barbeariaId ? s.clientId === barbeariaId : true))
@@ -299,6 +430,7 @@ export default function RelatoriosScreen() {
           const prev = grouped.get(key);
           const label = `${item.nome} (${item.linha || 'Bymen'})`;
           grouped.set(key, {
+            nome: item.nome,
             label,
             linha: item.linha || 'Bymen',
             total: Number(item.quantidade || 0) + Number(prev?.total || 0),
@@ -307,10 +439,10 @@ export default function RelatoriosScreen() {
       });
 
     let entries = Array.from(grouped.values());
-    if (produtoFiltroBancada !== 'Todos') {
-      entries = entries.filter((item) => item.label.startsWith(`${produtoFiltroBancada} (`));
+    if (produtoFiltroBancada !== FILTER_ALL) {
+      entries = entries.filter((item) => buildProductFilterKey(item.nome, item.linha) === produtoFiltroBancada);
     } else {
-      entries = entries.sort((a, b) => b.total - a.total).slice(0, 8);
+      entries = entries.sort(compareByCatalogOrder);
     }
 
     return entries.map((item) => ({
@@ -397,12 +529,7 @@ export default function RelatoriosScreen() {
   }
 
   if (loading) {
-    return (
-      <View style={{ flex: 1, backgroundColor: '#fff', justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator color="#3B82F6" />
-        <Text style={{ marginTop: 8, color: '#6B7280' }}>Carregando relatórios...</Text>
-      </View>
-    );
+    return <BymenLoader fullScreen label="Carregando relatórios..." />;
   }
 
   if (!barbearias.length) {
@@ -432,6 +559,21 @@ export default function RelatoriosScreen() {
       >
         Relatórios e Gráficos
       </Text>
+
+      <View
+        style={{
+          marginBottom: isSmallScreen ? 12 : 16,
+          padding: isSmallScreen ? 10 : 12,
+          borderRadius: 10,
+          borderWidth: 1,
+          borderColor: '#A7F3D0',
+          backgroundColor: '#ECFDF5',
+        }}
+      >
+        <Text style={{ color: '#065F46', fontSize: isSmallScreen ? 12 : 13, fontWeight: '600' }}>
+          Totais financeiros consideram desconto à vista de 5% quando o pagamento é PIX ou Dinheiro.
+        </Text>
+      </View>
 
       {/* Filtro de Barbearia */}
       <View style={{ marginBottom: isSmallScreen ? 18 : 32 }}>
@@ -588,7 +730,7 @@ export default function RelatoriosScreen() {
             onPress={() => setModalFiltroMedicaoVisible(true)}
           >
             <Text style={{ color: '#991B1B', fontWeight: '700', fontSize: 12 }}>
-              Filtro: {produtoFiltroMedicao}
+              Filtro: {selectedProdutoFiltroMedicaoLabel}
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
@@ -641,7 +783,7 @@ export default function RelatoriosScreen() {
             onPress={() => setModalFiltroBancadaVisible(true)}
           >
             <Text style={{ color: '#991B1B', fontWeight: '700', fontSize: 12 }}>
-              Filtro: {produtoFiltroBancada}
+              Filtro: {selectedProdutoFiltroBancadaLabel}
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
@@ -677,22 +819,96 @@ export default function RelatoriosScreen() {
         onRequestClose={() => setModalFiltroMedicaoVisible(false)}
       >
         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.2)' }}>
-          <View style={{ width: isSmallScreen ? '92%' : '70%', backgroundColor: '#fff', borderRadius: 16, padding: isSmallScreen ? 16 : 24 }}>
-            <Text style={{ fontSize: 16, fontWeight: '700', color: '#111827', marginBottom: 10 }}>Filtro • Medição</Text>
-            {produtosFiltroMedicao.map((prod) => (
+          <View style={{ width: isSmallScreen ? '94%' : '72%', maxHeight: '80%', backgroundColor: '#fff', borderRadius: 18, padding: isSmallScreen ? 14 : 20 }}>
+            <Text style={{ fontSize: 16, fontWeight: '800', color: '#111827', marginBottom: 4 }}>Filtro • Medição</Text>
+            <Text style={{ color: '#6B7280', marginBottom: 12, fontSize: 12 }}>
+              Selecione o produto exato com a linha correta.
+            </Text>
+            <TextInput
+              value={searchFiltroMedicao}
+              onChangeText={setSearchFiltroMedicao}
+              placeholder="Buscar produto..."
+              placeholderTextColor="#9CA3AF"
+              style={{
+                borderWidth: 1,
+                borderColor: '#E5E7EB',
+                borderRadius: 10,
+                paddingHorizontal: 12,
+                paddingVertical: 10,
+                marginBottom: 10,
+                color: '#111827',
+                backgroundColor: '#FFFFFF',
+              }}
+            />
+            <View style={{ marginBottom: 10, flexDirection: 'row', flexWrap: 'wrap' }}>
+              {LINHA_FILTER_OPTIONS.map((bucket) => (
+                <TouchableOpacity
+                  key={`med-bucket-${bucket.value}`}
+                  onPress={() => setLinhaFiltroMedicao(bucket.value as LinhaFilter)}
+                  style={{
+                    marginRight: 8,
+                    marginBottom: 8,
+                    paddingHorizontal: 12,
+                    paddingVertical: 8,
+                    borderRadius: 999,
+                    borderWidth: 1,
+                    borderColor: linhaFiltroMedicao === bucket.value ? '#FCA5A5' : '#E5E7EB',
+                    backgroundColor: linhaFiltroMedicao === bucket.value ? '#FEF2F2' : '#FFFFFF',
+                  }}
+                >
+                  <Text style={{ color: linhaFiltroMedicao === bucket.value ? '#B91C1C' : '#374151', fontWeight: '700', fontSize: 12 }}>
+                    {bucket.label} ({linhaCountsMedicao[bucket.value]})
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <ScrollView showsVerticalScrollIndicator={false}>
+            {produtosFiltroMedicaoFiltrados.map((prod) => (
               <TouchableOpacity
-                key={`med-${prod}`}
-                style={{ paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' }}
+                key={`med-${prod.value}`}
+                style={{
+                  paddingVertical: 12,
+                  paddingHorizontal: 12,
+                  borderWidth: 1,
+                  borderColor: prod.value === produtoFiltroMedicao ? '#FCA5A5' : '#E5E7EB',
+                  backgroundColor: prod.value === produtoFiltroMedicao ? '#FEF2F2' : '#FFFFFF',
+                  borderRadius: 12,
+                  marginBottom: 8,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                }}
                 onPress={() => {
-                  setProdutoFiltroMedicao(prod);
+                  setProdutoFiltroMedicao(prod.value);
                   setModalFiltroMedicaoVisible(false);
                 }}
               >
-                <Text style={{ color: prod === produtoFiltroMedicao ? '#DC2626' : '#111827', fontWeight: prod === produtoFiltroMedicao ? '700' : '500' }}>
-                  {prod}
-                </Text>
+                <View style={{ flex: 1, paddingRight: 8 }}>
+                  <Text style={{ color: prod.value === produtoFiltroMedicao ? '#B91C1C' : '#111827', fontWeight: prod.value === produtoFiltroMedicao ? '700' : '600' }}>
+                    {prod.label}
+                  </Text>
+                  {prod.value !== FILTER_ALL && (
+                    <Text
+                      style={{
+                        marginTop: 4,
+                        color: getLinhaColor(prod.linha),
+                        fontWeight: '700',
+                        fontSize: 11,
+                      }}
+                    >
+                      {String(prod.linha || 'Bymen').toUpperCase()}
+                    </Text>
+                  )}
+                </View>
+                {prod.value === produtoFiltroMedicao && <Ionicons name="checkmark-circle" size={20} color="#DC2626" />}
               </TouchableOpacity>
             ))}
+            {produtosFiltroMedicaoFiltrados.length === 0 && (
+              <Text style={{ color: '#9CA3AF', fontStyle: 'italic', paddingVertical: 8 }}>
+                Nenhum produto encontrado para este filtro.
+              </Text>
+            )}
+            </ScrollView>
             <TouchableOpacity onPress={() => setModalFiltroMedicaoVisible(false)} style={{ marginTop: 12 }}>
               <Text style={{ color: '#2563EB', fontWeight: '700' }}>Fechar</Text>
             </TouchableOpacity>
@@ -707,22 +923,96 @@ export default function RelatoriosScreen() {
         onRequestClose={() => setModalFiltroBancadaVisible(false)}
       >
         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.2)' }}>
-          <View style={{ width: isSmallScreen ? '92%' : '70%', backgroundColor: '#fff', borderRadius: 16, padding: isSmallScreen ? 16 : 24 }}>
-            <Text style={{ fontSize: 16, fontWeight: '700', color: '#111827', marginBottom: 10 }}>Filtro • Bancada</Text>
-            {produtosFiltroBancada.map((prod) => (
+          <View style={{ width: isSmallScreen ? '94%' : '72%', maxHeight: '80%', backgroundColor: '#fff', borderRadius: 18, padding: isSmallScreen ? 14 : 20 }}>
+            <Text style={{ fontSize: 16, fontWeight: '800', color: '#111827', marginBottom: 4 }}>Filtro • Bancada</Text>
+            <Text style={{ color: '#6B7280', marginBottom: 12, fontSize: 12 }}>
+              Selecione o produto de bancada com a linha correta.
+            </Text>
+            <TextInput
+              value={searchFiltroBancada}
+              onChangeText={setSearchFiltroBancada}
+              placeholder="Buscar produto..."
+              placeholderTextColor="#9CA3AF"
+              style={{
+                borderWidth: 1,
+                borderColor: '#E5E7EB',
+                borderRadius: 10,
+                paddingHorizontal: 12,
+                paddingVertical: 10,
+                marginBottom: 10,
+                color: '#111827',
+                backgroundColor: '#FFFFFF',
+              }}
+            />
+            <View style={{ marginBottom: 10, flexDirection: 'row', flexWrap: 'wrap' }}>
+              {LINHA_FILTER_OPTIONS.map((bucket) => (
+                <TouchableOpacity
+                  key={`ban-bucket-${bucket.value}`}
+                  onPress={() => setLinhaFiltroBancada(bucket.value as LinhaFilter)}
+                  style={{
+                    marginRight: 8,
+                    marginBottom: 8,
+                    paddingHorizontal: 12,
+                    paddingVertical: 8,
+                    borderRadius: 999,
+                    borderWidth: 1,
+                    borderColor: linhaFiltroBancada === bucket.value ? '#FCA5A5' : '#E5E7EB',
+                    backgroundColor: linhaFiltroBancada === bucket.value ? '#FEF2F2' : '#FFFFFF',
+                  }}
+                >
+                  <Text style={{ color: linhaFiltroBancada === bucket.value ? '#B91C1C' : '#374151', fontWeight: '700', fontSize: 12 }}>
+                    {bucket.label} ({linhaCountsBancada[bucket.value]})
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <ScrollView showsVerticalScrollIndicator={false}>
+            {produtosFiltroBancadaFiltrados.map((prod) => (
               <TouchableOpacity
-                key={`ban-${prod}`}
-                style={{ paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' }}
+                key={`ban-${prod.value}`}
+                style={{
+                  paddingVertical: 12,
+                  paddingHorizontal: 12,
+                  borderWidth: 1,
+                  borderColor: prod.value === produtoFiltroBancada ? '#FCA5A5' : '#E5E7EB',
+                  backgroundColor: prod.value === produtoFiltroBancada ? '#FEF2F2' : '#FFFFFF',
+                  borderRadius: 12,
+                  marginBottom: 8,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                }}
                 onPress={() => {
-                  setProdutoFiltroBancada(prod);
+                  setProdutoFiltroBancada(prod.value);
                   setModalFiltroBancadaVisible(false);
                 }}
               >
-                <Text style={{ color: prod === produtoFiltroBancada ? '#DC2626' : '#111827', fontWeight: prod === produtoFiltroBancada ? '700' : '500' }}>
-                  {prod}
-                </Text>
+                <View style={{ flex: 1, paddingRight: 8 }}>
+                  <Text style={{ color: prod.value === produtoFiltroBancada ? '#B91C1C' : '#111827', fontWeight: prod.value === produtoFiltroBancada ? '700' : '600' }}>
+                    {prod.label}
+                  </Text>
+                  {prod.value !== FILTER_ALL && (
+                    <Text
+                      style={{
+                        marginTop: 4,
+                        color: getLinhaColor(prod.linha),
+                        fontWeight: '700',
+                        fontSize: 11,
+                      }}
+                    >
+                      {String(prod.linha || 'Bymen').toUpperCase()}
+                    </Text>
+                  )}
+                </View>
+                {prod.value === produtoFiltroBancada && <Ionicons name="checkmark-circle" size={20} color="#DC2626" />}
               </TouchableOpacity>
             ))}
+            {produtosFiltroBancadaFiltrados.length === 0 && (
+              <Text style={{ color: '#9CA3AF', fontStyle: 'italic', paddingVertical: 8 }}>
+                Nenhum produto encontrado para este filtro.
+              </Text>
+            )}
+            </ScrollView>
             <TouchableOpacity onPress={() => setModalFiltroBancadaVisible(false)} style={{ marginTop: 12 }}>
               <Text style={{ color: '#2563EB', fontWeight: '700' }}>Fechar</Text>
             </TouchableOpacity>

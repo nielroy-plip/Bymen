@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useEffect, useRef } from 'react';
-import { View, Text, ScrollView, TextInput, Alert, KeyboardAvoidingView, Platform, Keyboard, TouchableWithoutFeedback, NativeSyntheticEvent, TextInputFocusEventData } from 'react-native';
+import { View, Text, ScrollView, TextInput, Alert, KeyboardAvoidingView, Platform, Keyboard, TouchableWithoutFeedback, InteractionManager, Dimensions, UIManager } from 'react-native';
 import { TouchableOpacity } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../routes';
@@ -17,6 +17,9 @@ import {
   API_BASE_URL,
   addProductStock,
   removeProductStock,
+  getCurrentUser,
+  removeStreetStockFromUser,
+  addStreetStockToUser,
 } from '../services/api';
 import { generateMeasurementPDF } from '../services/pdf';
 import { sharePdf } from '../services/whatsapp';
@@ -24,7 +27,11 @@ import SignaturePad from '../components/SignaturePad';
 import { useResponsive } from '../hooks/useResponsive';
 import * as Sharing from 'expo-sharing';
 import OperationContextHeader from '../components/OperationContextHeader';
+import BymenLoader from '../components/BymenLoader';
+import BymenLoadingOverlay from '../components/BymenLoadingOverlay';
 import { getProductUnit } from '../utils/product';
+import { getGeneralSettings } from '../services/settings';
+import { getUserAppRole } from '../services/access';
 
 const BACKEND_URL = API_BASE_URL;
 const ENABLE_BLING_SYNC = String(process.env.EXPO_PUBLIC_ENABLE_BLING || '').toLowerCase() === 'true';
@@ -39,8 +46,12 @@ const PAYMENT_OPTIONS: Array<{ id: PaymentMethod; label: string }> = [
   { id: 'BOLETO', label: 'Boleto' },
 ];
 
+const PAYMENT_DISCOUNT_PERCENT = 5;
+
 export default function FinalizarMedicaoScreen({ navigation, route }: Props) {
   const scrollRef = useRef<ScrollView>(null);
+  const keyboardHeightRef = useRef(0);
+  const scrollOffsetYRef = useRef(0);
   const params = route.params as any;
   const {
     clientId,
@@ -61,6 +72,11 @@ export default function FinalizarMedicaoScreen({ navigation, route }: Props) {
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>(
     paymentMethodParam || (pagamentoPixParam ? 'PIX' : 'DINHEIRO')
   );
+  const [isCardInstallment, setIsCardInstallment] = useState(Boolean(params?.isCreditInstallment));
+  const [installments, setInstallments] = useState(Number(params?.installmentCount || 2));
+  const [creditMonthlyInterestPercent, setCreditMonthlyInterestPercent] = useState(
+    Number(params?.creditMonthlyInterestPercent || 2.49),
+  );
   const [observacoes, setObservacoes] = useState(observacoesParam || '');
 
   // Estado local para produtos bonificados
@@ -73,9 +89,12 @@ export default function FinalizarMedicaoScreen({ navigation, route }: Props) {
   const [pdfUri, setPdfUri] = useState<string | undefined>(undefined);
   const [responsavel, setResponsavel] = useState(responsavelParam || '');
   const [signatureDataUrl, setSignatureDataUrl] = useState<string | undefined>(signatureParam);
+  const hasSignature = Boolean(signatureDataUrl && signatureDataUrl.trim().length > 0);
   const [isFinalizando, setIsFinalizando] = useState(false);
   const [finalizedMeasurementId, setFinalizedMeasurementId] = useState<string | undefined>(undefined);
   const [distributorStockByProductId, setDistributorStockByProductId] = useState<Record<string, number>>({});
+  const [renderDetailedRows, setRenderDetailedRows] = useState(false);
+  const { isTablet, padding, fontSize } = useResponsive();
 
   useEffect(() => {
     Promise.all([listClients(), listProducts()]).then(([clients, products]) => {
@@ -89,6 +108,158 @@ export default function FinalizarMedicaoScreen({ navigation, route }: Props) {
       setDistributorStockByProductId(stockMap);
     });
   }, [clientId]);
+
+  useEffect(() => {
+    getGeneralSettings().then((settings) => {
+      setCreditMonthlyInterestPercent(Number(settings.creditInstallmentMonthlyInterestPercent || 2.49));
+    });
+  }, []);
+
+  useEffect(() => {
+    const showSubscription = Keyboard.addListener('keyboardDidShow', (event) => {
+      keyboardHeightRef.current = event.endCoordinates?.height || 0;
+    });
+
+    const hideSubscription = Keyboard.addListener('keyboardDidHide', () => {
+      keyboardHeightRef.current = 0;
+    });
+
+    return () => {
+      showSubscription.remove();
+      hideSubscription.remove();
+    };
+  }, []);
+
+  useEffect(() => {
+    setRenderDetailedRows(false);
+    const task = InteractionManager.runAfterInteractions(() => {
+      setRenderDetailedRows(true);
+    });
+
+    return () => {
+      task.cancel();
+    };
+  }, [clientId, dateTime]);
+
+  const bancadaRowsWithQuantity = useMemo(
+    () => (bancadaRows as any[]).filter((r: any) => Number(r.quantidadeComprada ?? 0) > 0),
+    [bancadaRows],
+  );
+
+  const bonusRowsWithQuantity = useMemo(
+    () => (bonusRows as any[]).filter((r: any) => Number(r.quantidadeComprada ?? 0) > 0),
+    [bonusRows],
+  );
+
+  const totalBonusItems = useMemo(
+    () => bonusRowsWithQuantity.reduce((acc: number, r: any) => acc + Number(r.quantidadeComprada || 0), 0),
+    [bonusRowsWithQuantity],
+  );
+
+  const medicaoRowsSummary = useMemo(() => {
+    if (!renderDetailedRows) {
+      return (
+        <Text style={{ color: '#6B7280', fontSize: fontSize.small, fontStyle: 'italic' }}>
+          Carregando detalhes da medição...
+        </Text>
+      );
+    }
+
+    if ((medicaoRows as any[]).length === 0) {
+      return (
+        <Text style={{ color: '#9CA3AF', fontSize: fontSize.small, fontStyle: 'italic' }}>
+          Nenhum produto vendido
+        </Text>
+      );
+    }
+
+    return (medicaoRows as any[]).map((r: any) => (
+      <View key={r.id} style={{ paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: '#DBEAFE' }}>
+        <Text style={{ color: '#111827', fontWeight: '600', fontSize: fontSize.small }}>
+          {r.nome} • {r.linha} • {r.cap}{getProductUnit(String(r.nome || ''))}
+        </Text>
+        <Text style={{ color: '#6B7280', fontSize: fontSize.small }}>
+          PE: {r.estoqueAtual} | PV: {r.vendidos} | PR: {r.repostos} | PN: {r.diferenca} | PRD: {r.produtosRetirados ?? 0} | NE: {r.novoEstoque}
+        </Text>
+        <Text style={{ color: '#059669', fontWeight: '600', fontSize: fontSize.small }}>
+          {formatCurrency(r.valorMedicao)}
+        </Text>
+      </View>
+    ));
+  }, [renderDetailedRows, medicaoRows, fontSize.small]);
+
+  const bancadaRowsSummary = useMemo(() => {
+    if (!renderDetailedRows) {
+      return (
+        <Text style={{ color: '#6B7280', fontSize: fontSize.small, fontStyle: 'italic' }}>
+          Carregando detalhes da bancada...
+        </Text>
+      );
+    }
+
+    if (bancadaRowsWithQuantity.length === 0) {
+      return (
+        <Text style={{ color: '#9CA3AF', fontSize: fontSize.small, fontStyle: 'italic' }}>
+          Nenhum produto de uso interno
+        </Text>
+      );
+    }
+
+    return bancadaRowsWithQuantity.map((r: any) => (
+      <View key={r.id} style={{ paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: '#FEE2E2' }}>
+        <Text style={{ color: '#111827', fontWeight: '600', fontSize: fontSize.small }}>
+          {r.nome} • {r.linha} • {r.cap}{getProductUnit(String(r.nome || ''))}
+        </Text>
+        <Text style={{ color: '#6B7280', fontSize: fontSize.small }}>
+          Quantidade: {r.quantidadeComprada} × {formatCurrency(r.preco)}
+        </Text>
+        <Text style={{ color: '#DC2626', fontWeight: '600', fontSize: fontSize.small }}>
+          {formatCurrency(r.valorTotal)}
+        </Text>
+      </View>
+    ));
+  }, [renderDetailedRows, bancadaRowsWithQuantity, fontSize.small]);
+
+  const bonusRowsSummary = useMemo(() => {
+    if (!renderDetailedRows) {
+      return (
+        <Text style={{ color: '#6B7280', fontSize: fontSize.small, fontStyle: 'italic' }}>
+          Carregando detalhes da bonificação...
+        </Text>
+      );
+    }
+
+    if (bonusRowsWithQuantity.length === 0) {
+      return (
+        <Text style={{ color: '#9CA3AF', fontSize: fontSize.small, fontStyle: 'italic' }}>
+          Nenhum produto recebido como bonificação
+        </Text>
+      );
+    }
+
+    return bonusRowsWithQuantity.map((r: any) => (
+      <View key={r.id} style={{ paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: '#A7F3D0' }}>
+        <Text style={{ color: '#111827', fontWeight: '600', fontSize: fontSize.small }}>
+          {r.nome} • {r.linha} • {r.cap}{getProductUnit(String(r.nome || ''))}
+        </Text>
+        <Text style={{ color: '#6B7280', fontSize: fontSize.small }}>
+          Quantidade: {r.quantidadeComprada}
+        </Text>
+        <Text
+          style={{
+            color:
+              Number(r.quantidadeComprada ?? 0) > Number(distributorStockByProductId[r.id] ?? 0)
+                ? '#DC2626'
+                : '#059669',
+            fontSize: fontSize.small,
+            fontWeight: '600',
+          }}
+        >
+          Saldo distribuidor: {Number(distributorStockByProductId[r.id] ?? 0)}
+        </Text>
+      </View>
+    ));
+  }, [renderDetailedRows, bonusRowsWithQuantity, distributorStockByProductId, fontSize.small]);
 
   const bonusStockIssues = useMemo(() => {
     return (bonusRows as any[])
@@ -107,6 +278,48 @@ export default function FinalizarMedicaoScreen({ navigation, route }: Props) {
       .filter((item) => item.isInsufficient);
   }, [bonusRows, distributorStockByProductId]);
 
+  const hasFivePercentDiscount = paymentMethod === 'PIX' || paymentMethod === 'DINHEIRO';
+
+  const valorMedicaoComDesconto = useMemo(
+    () => (hasFivePercentDiscount ? valorMedicao * ((100 - PAYMENT_DISCOUNT_PERCENT) / 100) : valorMedicao),
+    [hasFivePercentDiscount, valorMedicao],
+  );
+
+  const valorDescontoAplicado = useMemo(
+    () => (hasFivePercentDiscount ? valorMedicao - valorMedicaoComDesconto : 0),
+    [hasFivePercentDiscount, valorMedicao, valorMedicaoComDesconto],
+  );
+
+  const totalGeralComDesconto = useMemo(
+    () => (hasFivePercentDiscount ? valorMedicaoComDesconto + valorBancada : totalGeral),
+    [hasFivePercentDiscount, valorMedicaoComDesconto, valorBancada, totalGeral],
+  );
+
+  const creditInterestValue = useMemo(() => {
+    if (paymentMethod !== 'CARTAO' || !isCardInstallment) return 0;
+    const monthlyRate = creditMonthlyInterestPercent / 100;
+    const factor = Math.pow(1 + monthlyRate, installments);
+    return totalGeralComDesconto * (factor - 1);
+  }, [paymentMethod, isCardInstallment, installments, totalGeralComDesconto, creditMonthlyInterestPercent]);
+
+  const totalFinal = useMemo(() => {
+    if (paymentMethod !== 'CARTAO' || !isCardInstallment) return totalGeralComDesconto;
+    return totalGeralComDesconto + creditInterestValue;
+  }, [paymentMethod, isCardInstallment, totalGeralComDesconto, creditInterestValue]);
+
+  const installmentValue = useMemo(() => {
+    if (paymentMethod !== 'CARTAO' || !isCardInstallment) return 0;
+    return totalFinal / installments;
+  }, [paymentMethod, isCardInstallment, totalFinal, installments]);
+
+  function handleChangePaymentMethod(method: PaymentMethod) {
+    setPaymentMethod(method);
+    if (method !== 'CARTAO') {
+      setIsCardInstallment(false);
+      setInstallments(2);
+    }
+  }
+
   // ========================================
   // GERAR PDF CONSOLIDADO
   // ========================================
@@ -114,6 +327,11 @@ export default function FinalizarMedicaoScreen({ navigation, route }: Props) {
     try {
       if (!client) {
         Alert.alert('Erro', 'Cliente não encontrado');
+        return undefined;
+      }
+
+      if (!hasSignature) {
+        Alert.alert('Assinatura obrigatória', 'Coleta a assinatura do responsável antes de gerar o PDF.');
         return undefined;
       }
 
@@ -154,12 +372,17 @@ export default function FinalizarMedicaoScreen({ navigation, route }: Props) {
         bonusRows: mappedBonusRows as any,
         valorMedicao,
         valorBancada,
-        totalGeral,
+        totalGeral: totalFinal,
         dateTime,
         signatureDataUrl,
         responsavelMedicao: responsavel || client.responsavel,
         observacoes,
-        pagamentoPix
+        pagamentoPix,
+        paymentMethod,
+        isCreditInstallment: paymentMethod === 'CARTAO' ? isCardInstallment : false,
+        installmentCount: paymentMethod === 'CARTAO' && isCardInstallment ? installments : 1,
+        creditMonthlyInterestPercent: paymentMethod === 'CARTAO' && isCardInstallment ? creditMonthlyInterestPercent : 0,
+        creditInterestValue: paymentMethod === 'CARTAO' && isCardInstallment ? creditInterestValue : 0,
       });
 
       if (finalizedMeasurementId) {
@@ -190,6 +413,11 @@ export default function FinalizarMedicaoScreen({ navigation, route }: Props) {
 
   async function handleEnviarWhatsApp() {
     try {
+      if (!hasSignature) {
+        Alert.alert('Assinatura obrigatória', 'Coleta a assinatura do responsável antes de enviar via WhatsApp.');
+        return;
+      }
+
       const currentUri = pdfUri || (await handleGerarPDF());
       if (currentUri) {
         await sharePdf(currentUri);
@@ -220,35 +448,73 @@ export default function FinalizarMedicaoScreen({ navigation, route }: Props) {
       return;
     }
 
+    if (!hasSignature) {
+      Alert.alert(
+        'Assinatura obrigatória',
+        'Coleta a assinatura do responsável da barbearia antes de finalizar a medição.',
+      );
+      return;
+    }
+
     setIsFinalizando(true);
 
     try {
+      const currentUser = await getCurrentUser();
       const medicaoId = finalizedMeasurementId || `${clientId}-${Date.now()}`;
+      const appRole = getUserAppRole(currentUser);
+      const usesStreetStock = appRole === 'VENDEDOR' || appRole === 'SUPERVISOR';
+      const streetStockEmail = String(currentUser?.email || '').trim().toLowerCase();
+
+      if (usesStreetStock && !streetStockEmail) {
+        Alert.alert('Erro', 'Não foi possível identificar o usuário logado para atualizar o estoque na rua.');
+        setIsFinalizando(false);
+        return;
+      }
 
       for (const row of medicaoRows as any[]) {
         const repostos = Number(row.repostos ?? 0);
         const retirados = Number(row.produtosRetirados ?? 0);
 
         if (repostos > 0) {
-          const ok = await removeProductStock(row.id, repostos);
+          const ok = usesStreetStock
+            ? await removeStreetStockFromUser(streetStockEmail, row.id, repostos)
+            : await removeProductStock(row.id, repostos);
+
           if (!ok) {
-            Alert.alert('Erro', `Estoque insuficiente para repor ${row.nome}.`);
+            Alert.alert(
+              'Erro',
+              usesStreetStock
+                ? `Estoque na rua insuficiente para repor ${row.nome}.`
+                : `Estoque insuficiente para repor ${row.nome}.`,
+            );
             setIsFinalizando(false);
             return;
           }
         }
 
         if (retirados > 0) {
-          await addProductStock(row.id, retirados);
+          if (usesStreetStock) {
+            await addStreetStockToUser(streetStockEmail, row.id, retirados);
+          } else {
+            await addProductStock(row.id, retirados);
+          }
         }
       }
 
       for (const row of bancadaRows as any[]) {
         const qtd = Number(row.quantidadeComprada ?? 0);
         if (qtd > 0) {
-          const ok = await removeProductStock(row.id, qtd);
+          const ok = usesStreetStock
+            ? await removeStreetStockFromUser(streetStockEmail, row.id, qtd)
+            : await removeProductStock(row.id, qtd);
+
           if (!ok) {
-            Alert.alert('Erro', `Estoque insuficiente para item de bancada ${row.nome}.`);
+            Alert.alert(
+              'Erro',
+              usesStreetStock
+                ? `Estoque na rua insuficiente para item de bancada ${row.nome}.`
+                : `Estoque insuficiente para item de bancada ${row.nome}.`,
+            );
             setIsFinalizando(false);
             return;
           }
@@ -258,9 +524,17 @@ export default function FinalizarMedicaoScreen({ navigation, route }: Props) {
       for (const row of bonusRows as any[]) {
         const qtd = Number(row.quantidadeComprada ?? 0);
         if (qtd > 0) {
-          const ok = await removeProductStock(row.id, qtd);
+          const ok = usesStreetStock
+            ? await removeStreetStockFromUser(streetStockEmail, row.id, qtd)
+            : await removeProductStock(row.id, qtd);
+
           if (!ok) {
-            Alert.alert('Erro', `Estoque insuficiente para bonificação ${row.nome}.`);
+            Alert.alert(
+              'Erro',
+              usesStreetStock
+                ? `Estoque na rua insuficiente para bonificação ${row.nome}.`
+                : `Estoque insuficiente para bonificação ${row.nome}.`,
+            );
             setIsFinalizando(false);
             return;
           }
@@ -272,16 +546,23 @@ export default function FinalizarMedicaoScreen({ navigation, route }: Props) {
         clientId,
         clientName: client.nome,
         dateTime,
+        sellerEmail: currentUser?.email,
+        sellerName: currentUser?.username || currentUser?.email,
+        sellerRole: currentUser?.role,
         medicaoRows,
         valorMedicao,
         bancadaRows,
         bonusRows,
         valorBancada,
-        totalGeral: pagamentoPix ? totalGeral - (valorMedicao - valorMedicaoPix) : totalGeral,
+        totalGeral: totalFinal,
         responsavel: responsavel || client.responsavel,
         observacoes,
         pagamentoPix,
         paymentMethod,
+        isCreditInstallment: paymentMethod === 'CARTAO' ? isCardInstallment : false,
+        installmentCount: paymentMethod === 'CARTAO' && isCardInstallment ? installments : 1,
+        creditMonthlyInterestPercent: paymentMethod === 'CARTAO' && isCardInstallment ? creditMonthlyInterestPercent : 0,
+        creditInterestValue: paymentMethod === 'CARTAO' && isCardInstallment ? creditInterestValue : 0,
         pdfUri: pdfUri || undefined,
         signatureDataUrl,
         status: 'FINALIZED',
@@ -394,25 +675,40 @@ export default function FinalizarMedicaoScreen({ navigation, route }: Props) {
     }
   }
 
-  const { isTablet, padding, fontSize } = useResponsive();
-
   if (!client) {
-    return (
-      <View style={{ flex: 1, backgroundColor: '#FFFFFF', padding, justifyContent: 'center', alignItems: 'center' }}>
-        <Text style={{ fontSize: fontSize.base, color: '#6B7280' }}>Carregando...</Text>
-      </View>
-    );
+    return <BymenLoader fullScreen label="Carregando medição..." />;
   }
 
   const pagamentoPix = paymentMethod === 'PIX';
-  // Calcula desconto PIX (5%)
-  const valorMedicaoPix = pagamentoPix ? valorMedicao * 0.95 : valorMedicao;
+  const discountLabel = paymentMethod === 'PIX' ? 'PIX' : 'Dinheiro';
+  // Calcula desconto de 5% apenas sobre a medição; bancada fica fora
 
-  function handleFieldFocus(event: NativeSyntheticEvent<TextInputFocusEventData>) {
-    const target = event.nativeEvent.target;
+  function handleFieldFocus(event: any) {
+    const target = Number(event?.nativeEvent?.target || 0);
+    if (!target) return;
+
+    // Etapa 1: ajuste inicial imediato para antecipar a subida do campo.
     setTimeout(() => {
       (scrollRef.current as any)?.scrollResponderScrollNativeHandleToKeyboard(target, 120, true);
     }, 40);
+
+    // Etapa 2: ajuste fino após a animação do teclado para garantir visibilidade.
+    setTimeout(() => {
+      UIManager.measureInWindow(target, (_x, y, _width, height) => {
+        const windowHeight = Dimensions.get('window').height;
+        const keyboardHeight = keyboardHeightRef.current;
+        const keyboardTop = keyboardHeight > 0 ? windowHeight - keyboardHeight : windowHeight * 0.58;
+        const extraBottomPadding = Platform.OS === 'android' ? 40 : 24;
+        const visibleBottom = keyboardTop - extraBottomPadding;
+        const fieldBottom = y + height;
+
+        if (fieldBottom <= visibleBottom) return;
+
+        const neededDelta = fieldBottom - visibleBottom + 16;
+        const targetOffset = Math.max(0, scrollOffsetYRef.current + neededDelta);
+        scrollRef.current?.scrollTo({ y: targetOffset, animated: true });
+      });
+    }, 240);
   }
 
   return (
@@ -427,6 +723,10 @@ export default function FinalizarMedicaoScreen({ navigation, route }: Props) {
         contentContainerStyle={{ padding, paddingBottom: 140 }}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
+        onScroll={(event) => {
+          scrollOffsetYRef.current = event.nativeEvent.contentOffset.y;
+        }}
+        scrollEventThrottle={16}
       >
         <OperationContextHeader
           title="Resumo da Medição"
@@ -450,32 +750,14 @@ export default function FinalizarMedicaoScreen({ navigation, route }: Props) {
           <Text style={{ fontSize: fontSize.base, fontWeight: '700', color: '#1E40AF', marginBottom: 8 }}>
             📊 Medição (Produtos Vendidos)
           </Text>
-          {medicaoRows.length === 0 ? (
-            <Text style={{ color: '#9CA3AF', fontSize: fontSize.small, fontStyle: 'italic' }}>
-              Nenhum produto vendido
-            </Text>
-          ) : (
-            medicaoRows.map((r: any) => (
-              <View key={r.id} style={{ paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: '#DBEAFE' }}>
-                <Text style={{ color: '#111827', fontWeight: '600', fontSize: fontSize.small }}>
-                  {r.nome} • {r.linha} • {r.cap}{getProductUnit(String(r.nome || ''))}
-                </Text>
-                <Text style={{ color: '#6B7280', fontSize: fontSize.small }}>
-                  PE: {r.estoqueAtual} | PV: {r.vendidos} | PR: {r.repostos} | PN: {r.diferenca} | PRD: {r.produtosRetirados ?? 0} | NE: {r.novoEstoque}
-                </Text>
-                <Text style={{ color: '#059669', fontWeight: '600', fontSize: fontSize.small }}>
-                  {formatCurrency(r.valorMedicao)}
-                </Text>
-              </View>
-            ))
-          )}
+          {medicaoRowsSummary}
           <View style={{ marginTop: 8, alignItems: 'flex-end' }}>
             <Text style={{ fontSize: fontSize.base, fontWeight: '700', color: '#1E40AF' }}>
               Valor Medição: {formatCurrency(valorMedicao)}
             </Text>
-            {pagamentoPix && (
+            {hasFivePercentDiscount && (
               <Text style={{ fontSize: fontSize.base, fontWeight: '700', color: '#059669', marginTop: 4 }}>
-                Valor com PIX: {formatCurrency(valorMedicaoPix)}
+                Valor com {discountLabel}: {formatCurrency(valorMedicaoComDesconto)}
               </Text>
             )}
           </View>
@@ -503,25 +785,7 @@ export default function FinalizarMedicaoScreen({ navigation, route }: Props) {
           <Text style={{ fontSize: fontSize.base, fontWeight: '700', color: '#991B1B', marginBottom: 8 }}>
             🏪 Bancada (Uso Interno)
           </Text>
-          {bancadaRows.filter((r: any) => r.quantidadeComprada > 0).length === 0 ? (
-            <Text style={{ color: '#9CA3AF', fontSize: fontSize.small, fontStyle: 'italic' }}>
-              Nenhum produto de uso interno
-            </Text>
-          ) : (
-            bancadaRows.filter((r: any) => r.quantidadeComprada > 0).map((r: any) => (
-              <View key={r.id} style={{ paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: '#FEE2E2' }}>
-                <Text style={{ color: '#111827', fontWeight: '600', fontSize: fontSize.small }}>
-                  {r.nome} • {r.linha} • {r.cap}{getProductUnit(String(r.nome || ''))}
-                </Text>
-                <Text style={{ color: '#6B7280', fontSize: fontSize.small }}>
-                  Quantidade: {r.quantidadeComprada} × {formatCurrency(r.preco)}
-                </Text>
-                <Text style={{ color: '#DC2626', fontWeight: '600', fontSize: fontSize.small }}>
-                  {formatCurrency(r.valorTotal)}
-                </Text>
-              </View>
-            ))
-          )}
+          {bancadaRowsSummary}
           <View style={{ marginTop: 8, alignItems: 'flex-end' }}>
             <Text style={{ fontSize: fontSize.base, fontWeight: '700', color: '#991B1B' }}>
               Valor Bancada: {formatCurrency(valorBancada)}
@@ -545,34 +809,7 @@ export default function FinalizarMedicaoScreen({ navigation, route }: Props) {
           <Text style={{ fontSize: fontSize.base, fontWeight: '700', color: '#059669', marginBottom: 8 }}>
             Bonificação
           </Text>
-          {bonusRows.filter((r: { quantidadeComprada: number; }) => r.quantidadeComprada > 0).length === 0 ? (
-            <Text style={{ color: '#9CA3AF', fontSize: fontSize.small, fontStyle: 'italic' }}>
-              Nenhum produto recebido como bonificação
-            </Text>
-          ) : (
-            bonusRows.filter((r: { quantidadeComprada: number; }) => r.quantidadeComprada > 0).map((r: any) => (
-              <View key={r.id} style={{ paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: '#A7F3D0' }}>
-                <Text style={{ color: '#111827', fontWeight: '600', fontSize: fontSize.small }}>
-                  {r.nome} • {r.linha} • {r.cap}{getProductUnit(String(r.nome || ''))}
-                </Text>
-                <Text style={{ color: '#6B7280', fontSize: fontSize.small }}>
-                  Quantidade: {r.quantidadeComprada}
-                </Text>
-                <Text
-                  style={{
-                    color:
-                      Number(r.quantidadeComprada ?? 0) > Number(distributorStockByProductId[r.id] ?? 0)
-                        ? '#DC2626'
-                        : '#059669',
-                    fontSize: fontSize.small,
-                    fontWeight: '600',
-                  }}
-                >
-                  Saldo distribuidor: {Number(distributorStockByProductId[r.id] ?? 0)}
-                </Text>
-              </View>
-            ))
-          )}
+          {bonusRowsSummary}
           {bonusStockIssues.length > 0 && (
             <View style={{ marginTop: 10, padding: 10, borderRadius: 8, backgroundColor: '#FEE2E2', borderWidth: 1, borderColor: '#FCA5A5' }}>
               <Text style={{ color: '#B91C1C', fontWeight: '700', marginBottom: 4 }}>
@@ -587,7 +824,7 @@ export default function FinalizarMedicaoScreen({ navigation, route }: Props) {
           )}
           <View style={{ marginTop: 8, alignItems: 'flex-end' }}>
             <Text style={{ fontSize: fontSize.base, fontWeight: '700', color: '#059669' }}>
-              Total de produtos bonificados: {valorBonus}
+              Total de produtos bonificados: {totalBonusItems}
             </Text>
           </View>
         </View>
@@ -639,7 +876,7 @@ export default function FinalizarMedicaoScreen({ navigation, route }: Props) {
               {PAYMENT_OPTIONS.map((option) => (
                 <TouchableOpacity
                   key={option.id}
-                  onPress={() => setPaymentMethod(option.id)}
+                  onPress={() => handleChangePaymentMethod(option.id)}
                   style={{
                     paddingVertical: 10,
                     paddingHorizontal: 12,
@@ -655,11 +892,101 @@ export default function FinalizarMedicaoScreen({ navigation, route }: Props) {
                 </TouchableOpacity>
               ))}
             </View>
-            {pagamentoPix && <Text style={{ color: '#059669', marginTop: 10 }}>Desconto PIX: 5%</Text>}
+            {hasFivePercentDiscount && (
+              <Text style={{ color: '#059669', marginTop: 10 }}>
+                Desconto {discountLabel}: {PAYMENT_DISCOUNT_PERCENT}%
+              </Text>
+            )}
+
+            {paymentMethod === 'CARTAO' && (
+              <View style={{ marginTop: 12 }}>
+                <Text style={{ color: '#111827', fontWeight: '700', marginBottom: 8 }}>Modalidade do cartão</Text>
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  <TouchableOpacity
+                    onPress={() => setIsCardInstallment(false)}
+                    style={{
+                      paddingVertical: 8,
+                      paddingHorizontal: 10,
+                      borderRadius: 999,
+                      borderWidth: 1,
+                      borderColor: !isCardInstallment ? '#111827' : '#D1D5DB',
+                      backgroundColor: !isCardInstallment ? '#111827' : '#FFFFFF',
+                    }}
+                  >
+                    <Text style={{ color: !isCardInstallment ? '#FFFFFF' : '#374151', fontWeight: '700' }}>Crédito à vista</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => setIsCardInstallment(true)}
+                    style={{
+                      paddingVertical: 8,
+                      paddingHorizontal: 10,
+                      borderRadius: 999,
+                      borderWidth: 1,
+                      borderColor: isCardInstallment ? '#111827' : '#D1D5DB',
+                      backgroundColor: isCardInstallment ? '#111827' : '#FFFFFF',
+                    }}
+                  >
+                    <Text style={{ color: isCardInstallment ? '#FFFFFF' : '#374151', fontWeight: '700' }}>Crédito parcelado</Text>
+                  </TouchableOpacity>
+                </View>
+
+                {isCardInstallment && (
+                  <>
+                    <Text style={{ color: '#111827', fontWeight: '700', marginTop: 12, marginBottom: 8 }}>Quantidade de parcelas</Text>
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                      {Array.from({ length: 11 }, (_, i) => i + 2).map((n) => (
+                        <TouchableOpacity
+                          key={n}
+                          onPress={() => setInstallments(n)}
+                          style={{
+                            paddingVertical: 8,
+                            paddingHorizontal: 10,
+                            borderRadius: 999,
+                            borderWidth: 1,
+                            borderColor: installments === n ? '#1D4ED8' : '#D1D5DB',
+                            backgroundColor: installments === n ? '#DBEAFE' : '#FFFFFF',
+                          }}
+                        >
+                          <Text style={{ color: installments === n ? '#1D4ED8' : '#374151', fontWeight: '700' }}>{n}x</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+
+                    <View style={{ marginTop: 10, backgroundColor: '#EFF6FF', borderRadius: 8, padding: 10, borderWidth: 1, borderColor: '#BFDBFE' }}>
+                      <Text style={{ color: '#1D4ED8', fontWeight: '700', marginBottom: 4 }}>Simulação de parcelamento</Text>
+                      <Text style={{ color: '#1F2937' }}>Juros mensal: {creditMonthlyInterestPercent.toFixed(2).replace('.', ',')}%</Text>
+                      <Text style={{ color: '#1F2937' }}>Parcela: {installments}x de {formatCurrency(installmentValue)}</Text>
+                      <Text style={{ color: '#1F2937' }}>Acréscimo total: {formatCurrency(creditInterestValue)}</Text>
+                      <Text style={{ color: '#1D4ED8', fontWeight: '700' }}>Total com juros: {formatCurrency(totalFinal)}</Text>
+                    </View>
+                  </>
+                )}
+              </View>
+            )}
           </View>
 
         {/* Assinatura */}
+        <View
+          style={{
+            alignSelf: 'flex-start',
+            marginTop: isTablet ? 12 : 10,
+            marginBottom: 10,
+            paddingHorizontal: 10,
+            paddingVertical: 6,
+            borderRadius: 999,
+            backgroundColor: hasSignature ? '#DCFCE7' : '#FEE2E2',
+          }}
+        >
+          <Text style={{ color: hasSignature ? '#166534' : '#991B1B', fontSize: fontSize.small, fontWeight: '700' }}>
+            {hasSignature ? '✓ Assinatura coletada' : '⚠ Assinatura pendente'}
+          </Text>
+        </View>
         <SignaturePad label="Assinatura do responsável da barbearia" onChange={setSignatureDataUrl} />
+        {!hasSignature && (
+          <Text style={{ color: '#B91C1C', marginTop: 8, fontSize: fontSize.small }}>
+            A assinatura é obrigatória para finalizar a medição.
+          </Text>
+        )}
 
         {/* ================================================ */}
         {/* TOTAL GERAL                                     */}
@@ -677,21 +1004,31 @@ export default function FinalizarMedicaoScreen({ navigation, route }: Props) {
           <Text style={{ fontSize: fontSize.base, color: '#6B7280', marginBottom: 4 }}>
             Medição: {formatCurrency(valorMedicao)}
           </Text>
-          {pagamentoPix && (
+          {hasFivePercentDiscount && (
             <Text style={{ fontSize: fontSize.base, color: '#059669', marginBottom: 4 }}>
-              Desconto PIX aplicado: -5% ({formatCurrency(valorMedicao - valorMedicaoPix)})
+              Desconto {discountLabel} aplicado: -{PAYMENT_DISCOUNT_PERCENT}% ({formatCurrency(valorDescontoAplicado)})
             </Text>
           )}
           <Text style={{ fontSize: fontSize.base, color: '#6B7280', marginBottom: 4 }}>
             Bancada: {formatCurrency(valorBancada)}
           </Text>
           <Text style={{ fontSize: fontSize.base, color: '#6B7280', marginBottom: 8 }}>
-            Bonificação: {bonusRows.reduce((acc: any, r: any) => acc + (r.quantidadeComprada || 0), 0)} produtos
+            Bonificação: {totalBonusItems} produtos
           </Text>
+          {paymentMethod === 'CARTAO' && isCardInstallment && (
+            <>
+              <Text style={{ fontSize: fontSize.base, color: '#1D4ED8', marginBottom: 4 }}>
+                Juros do parcelamento ({installments}x): +{formatCurrency(creditInterestValue)}
+              </Text>
+              <Text style={{ fontSize: fontSize.base, color: '#1D4ED8', marginBottom: 4 }}>
+                Simulação: {installments}x de {formatCurrency(installmentValue)}
+              </Text>
+            </>
+          )}
           <View style={{ borderTopWidth: 1, borderTopColor: '#E5E7EB', paddingTop: 8 }}>
             <Text style={{ fontSize: fontSize.large, fontWeight: '600', color: '#111827' }}>Total Geral</Text>
             <Text style={{ fontSize: fontSize.xlarge, fontWeight: '700', color: '#111827', marginTop: 4 }}>
-              {formatCurrency(pagamentoPix ? (totalGeral - (valorMedicao - valorMedicaoPix)) : totalGeral)}
+              {formatCurrency(totalFinal)}
             </Text>
           </View>
         </View>
@@ -701,13 +1038,20 @@ export default function FinalizarMedicaoScreen({ navigation, route }: Props) {
           title={isFinalizando ? 'Finalizando medição...' : 'Finalizar medição'}
           icon="checkmark-circle-outline"
           onPress={handleFinalizarMedicao}
-          disabled={isFinalizando || bonusStockIssues.length > 0}
+          disabled={isFinalizando || bonusStockIssues.length > 0 || !hasSignature}
         />
         <View style={{ height: 12 }} />
-        <Button title="Gerar PDF" icon="document-outline" onPress={handleGerarPDF} />
+        <Button title="Gerar PDF" icon="document-outline" onPress={handleGerarPDF} disabled={!hasSignature} />
         <View style={{ height: 12 }} />
-        <Button title="Enviar via WhatsApp" icon="logo-whatsapp" onPress={handleEnviarWhatsApp} variant="secondary" />
+        <Button
+          title="Enviar via WhatsApp"
+          icon="logo-whatsapp"
+          onPress={handleEnviarWhatsApp}
+          variant="secondary"
+          disabled={!hasSignature}
+        />
       </ScrollView>
+      <BymenLoadingOverlay visible={isFinalizando} label="Finalizando medição..." />
       </KeyboardAvoidingView>
     </TouchableWithoutFeedback>
   );

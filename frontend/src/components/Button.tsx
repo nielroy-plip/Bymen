@@ -1,7 +1,6 @@
 import React from 'react';
-import { Pressable, Text, ViewStyle, View } from 'react-native';
+import { Dimensions, Pressable, Text, ViewStyle, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useResponsive } from '../hooks/useResponsive';
 
 type Props = {
   title: string;
@@ -26,7 +25,15 @@ export default function Button({
   iconSize = 22,
   contentDirection = 'row',
 }: Props) {
-  const { isTablet, buttonHeight, fontSize } = useResponsive();
+  const { width } = Dimensions.get('window');
+  const isTablet = width >= 768;
+  const buttonHeight = isTablet ? 56 : 48;
+  const fontSize = {
+    small: isTablet ? 14 : 12,
+    base: isTablet ? 18 : 16,
+    large: isTablet ? 24 : 20,
+    xlarge: isTablet ? 32 : 24,
+  };
   
   const base = {
     paddingVertical: isTablet ? 16 : 14,

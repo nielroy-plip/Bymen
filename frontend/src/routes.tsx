@@ -18,6 +18,10 @@ import { MedicaoRow, BancadaRow } from './services/api';
 import NovoEstoqueScreen from './screens/NovoEstoqueScreen';
 import RelatoriosScreen from './screens/RelatoriosScreen';
 import ConfiguracoesUsuarioScreen from './screens/ConfiguracoesUsuarioScreen';
+import ConfiguracoesGeraisScreen from './screens/ConfiguracoesGeraisScreen';
+import RelatorioVendedorScreen from './screens/RelatorioVendedorScreen';
+import RelatorioEstoqueRuaScreen from './screens/RelatorioEstoqueRuaScreen';
+import GerenciarUsuariosScreen from './screens/GerenciarUsuariosScreen';
 import PendenciasSyncScreen from './screens/PendenciasSyncScreen';
 import VendasScreen from './screens/VendasScreen';
 import FinalizarVendaScreen from './screens/FinalizarVendaScreen';
@@ -47,6 +51,11 @@ export type RootStackParamList = {
       valorTotal: number;
     }>;
     total: number;
+    paymentMethod?: 'PIX' | 'DINHEIRO' | 'CARTAO' | 'BOLETO';
+    isCreditInstallment?: boolean;
+    installmentCount?: number;
+    creditMonthlyInterestPercent?: number;
+    creditInterestValue?: number;
   };
   ClienteDetalhes: { clientId: string } | undefined;
   CriarMedicao: { clientId: string } | undefined;
@@ -63,6 +72,10 @@ export type RootStackParamList = {
     observacoes?: string;
     pagamentoPix?: boolean;
     paymentMethod?: 'PIX' | 'DINHEIRO' | 'CARTAO' | 'BOLETO';
+    isCreditInstallment?: boolean;
+    installmentCount?: number;
+    creditMonthlyInterestPercent?: number;
+    creditInterestValue?: number;
     signatureDataUrl?: string;
   };
   HistoricoMedicoes: undefined;
@@ -87,7 +100,11 @@ export type RootStackParamList = {
       }
     | undefined;
   Relatorios: undefined;
+  RelatorioVendedor: undefined;
+  RelatorioEstoqueRua: undefined;
+  GerenciarUsuarios: undefined;
   ConfiguracoesUsuario: undefined;
+  ConfiguracoesGerais: undefined;
   PendenciasSync: undefined;
 };
 
@@ -239,10 +256,42 @@ export default function Routes() {
         }}
       />
       <Stack.Screen
+        name="RelatorioVendedor"
+        component={RelatorioVendedorScreen}
+        options={{
+          title: 'Relatório de Vendedor',
+          headerBackTitle: 'Dashboard',
+        }}
+      />
+      <Stack.Screen
+        name="RelatorioEstoqueRua"
+        component={RelatorioEstoqueRuaScreen}
+        options={{
+          title: 'Relatório Estoque Rua',
+          headerBackTitle: 'Dashboard',
+        }}
+      />
+      <Stack.Screen
+        name="GerenciarUsuarios"
+        component={GerenciarUsuariosScreen}
+        options={{
+          title: 'Gerenciar Usuários',
+          headerBackTitle: 'Dashboard',
+        }}
+      />
+      <Stack.Screen
         name="ConfiguracoesUsuario"
         component={ConfiguracoesUsuarioScreen}
         options={{
           title: 'Configuração do Usuário',
+          headerBackTitle: 'Dashboard',
+        }}
+      />
+      <Stack.Screen
+        name="ConfiguracoesGerais"
+        component={ConfiguracoesGeraisScreen}
+        options={{
+          title: 'Configurações Gerais',
           headerBackTitle: 'Dashboard',
         }}
       />

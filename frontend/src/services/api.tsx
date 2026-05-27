@@ -73,6 +73,9 @@ export type Measurement = {
   clientId: string;
   clientName?: string;
   dateTime: string;
+  sellerEmail?: string;
+  sellerName?: string;
+  sellerRole?: string;
   // Tabela 1: Medição (produtos vendidos)
   medicaoRows: MedicaoRow[];
   valorMedicao: number;
@@ -88,6 +91,10 @@ export type Measurement = {
   observacoes?: string;
   pagamentoPix?: boolean;
   paymentMethod?: 'PIX' | 'DINHEIRO' | 'CARTAO' | 'BOLETO';
+  isCreditInstallment?: boolean;
+  installmentCount?: number;
+  creditMonthlyInterestPercent?: number;
+  creditInterestValue?: number;
   signatureDataUrl?: string;
   status?: MeasurementStatus;
   syncStatus?: MeasurementSyncStatus;
@@ -121,11 +128,18 @@ export type Sale = {
   clientName: string;
   dateTime: string;
   items: SaleItem[];
+  sellerEmail?: string;
+  sellerName?: string;
+  sellerRole?: string;
   subtotal?: number;
   pixDiscountPercent?: number;
   pixDiscountValue?: number;
   total: number;
   paymentMethod?: 'PIX' | 'DINHEIRO' | 'CARTAO' | 'BOLETO';
+  isCreditInstallment?: boolean;
+  installmentCount?: number;
+  creditMonthlyInterestPercent?: number;
+  creditInterestValue?: number;
   responsavel?: string;
   observacoes?: string;
   signatureDataUrl?: string;
@@ -172,6 +186,8 @@ const KEY = 'bymen_measurements';
 const SALES_KEY = 'bymen_sales';
 const STOCK_KEY = 'bymen_stock';
 const CLIENT_STOCK_KEY = 'bymen_client_stock';
+const USER_STREET_STOCK_KEY = 'bymen_user_street_stock';
+const USER_STREET_STOCK_MOVEMENTS_KEY = 'bymen_user_street_stock_movements';
 const CLIENTS_KEY = 'bymen_clients';
 const SYNC_QUEUE_KEY = 'bymen_sync_queue';
 const CURRENT_USER_KEY = 'bymen_current_user';
@@ -212,6 +228,7 @@ function applyClientMasks(client: Client): Client {
     ...client,
     cnpjCpf: formatCpfCnpj(client.cnpjCpf || ''),
     telefone: formatPhone(client.telefone || ''),
+    email: String(client.email || '').trim().toLowerCase(),
   };
 }
 
@@ -221,6 +238,16 @@ export type AppUser = {
   role?: string;
   username?: string;
   phone?: string;
+};
+
+export type ManagedUser = {
+  id?: string;
+  email: string;
+  role: string;
+  username?: string;
+  phone?: string;
+  createdAt?: string;
+  updatedAt?: string;
 };
 
 type UserRegistryItem = {
@@ -252,6 +279,10 @@ function formatUserFacingError(rawMessage: string, status?: number) {
     return 'Motivo: serviço indisponível no momento. Como ajustar: aguarde alguns segundos e tente novamente.';
   }
 
+  if (status === 500 || normalized.includes('internal server error')) {
+    return `Erro interno no servidor (500). Como ajustar: verifique os logs do backend no Northflank e tente novamente.`;
+  }
+
   return `Motivo: ${rawMessage || 'erro inesperado no servidor'}. Como ajustar: tente novamente e, se persistir, valide a configuração da homologação.`;
 }
 
@@ -281,6 +312,71 @@ async function readClientStock(): Promise<Record<string, Record<string, number>>
 
 async function writeClientStock(stock: Record<string, Record<string, number>>): Promise<void> {
   await AsyncStorage.setItem(CLIENT_STOCK_KEY, JSON.stringify(stock));
+}
+
+type UserStreetStock = Record<string, Record<string, number>>;
+
+export type StreetStockMovementType =
+  | 'TRANSFER_DISTRIBUTOR_TO_USER'
+  | 'CONSUMPTION'
+  | 'RETURN_TO_USER';
+
+export type StreetStockMovement = {
+  id: string;
+  userEmail: string;
+  productId: string;
+  quantity: number;
+  type: StreetStockMovementType;
+  createdAt: string;
+};
+
+function normalizeUserStockEmail(email: string) {
+  return String(email || '').trim().toLowerCase();
+}
+
+async function readUserStreetStock(): Promise<UserStreetStock> {
+  const raw = await AsyncStorage.getItem(USER_STREET_STOCK_KEY);
+  if (!raw) return {};
+
+  try {
+    const parsed = JSON.parse(raw) as UserStreetStock;
+    if (!parsed || typeof parsed !== 'object') return {};
+    return parsed;
+  } catch {
+    return {};
+  }
+}
+
+async function writeUserStreetStock(stock: UserStreetStock): Promise<void> {
+  await AsyncStorage.setItem(USER_STREET_STOCK_KEY, JSON.stringify(stock));
+}
+
+async function readUserStreetStockMovements(): Promise<StreetStockMovement[]> {
+  const raw = await AsyncStorage.getItem(USER_STREET_STOCK_MOVEMENTS_KEY);
+  if (!raw) return [];
+
+  try {
+    const parsed = JSON.parse(raw) as StreetStockMovement[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+async function writeUserStreetStockMovements(items: StreetStockMovement[]): Promise<void> {
+  await AsyncStorage.setItem(USER_STREET_STOCK_MOVEMENTS_KEY, JSON.stringify(items));
+}
+
+async function appendStreetStockMovement(item: Omit<StreetStockMovement, 'id' | 'createdAt'>) {
+  const all = await readUserStreetStockMovements();
+  const next: StreetStockMovement = {
+    ...item,
+    id: `street-stock-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+    createdAt: new Date().toISOString(),
+  };
+
+  await writeUserStreetStockMovements([next, ...all].slice(0, 2000));
+  return next;
 }
 
 async function readCustomProducts(): Promise<Product[]> {
@@ -373,6 +469,16 @@ export async function getCurrentUser(): Promise<AppUser | null> {
   }
 }
 
+export async function setCurrentUser(currentUser: AppUser | null) {
+  if (!currentUser) {
+    await AsyncStorage.removeItem(CURRENT_USER_KEY);
+    return null;
+  }
+
+  await AsyncStorage.setItem(CURRENT_USER_KEY, JSON.stringify(currentUser));
+  return currentUser;
+}
+
 export async function saveCurrentUserProfile(partial: Partial<AppUser>) {
   const current = await getCurrentUser();
   if (!current) return null;
@@ -390,7 +496,7 @@ export async function saveCurrentUserProfile(partial: Partial<AppUser>) {
     ...current,
     ...updated,
   };
-  await AsyncStorage.setItem(CURRENT_USER_KEY, JSON.stringify(next));
+  await setCurrentUser(next);
   return next;
 }
 
@@ -428,12 +534,13 @@ async function homologRequest<T = any>(path: string, init?: RequestInit): Promis
   return (text ? JSON.parse(text) : {}) as T;
 }
 
-export async function registerUser(input: { email: string; password: string; username: string; phone: string }) {
+export async function registerUser(input: { email: string; password: string; username: string; phone: string; role?: string }) {
   const payload = {
     email: input.email.trim().toLowerCase(),
     password: input.password,
     username: input.username.trim(),
     phone: input.phone.trim(),
+    role: String(input.role || 'VENDEDOR').trim().toUpperCase(),
   };
 
   return homologRequest('/homolog/users/register', {
@@ -458,7 +565,7 @@ export async function loginUser(input: { identifier: string; password: string })
     username: result.username,
     phone: result.phone,
   };
-  await AsyncStorage.setItem(CURRENT_USER_KEY, JSON.stringify(currentUser));
+  await setCurrentUser(currentUser);
   return currentUser;
 }
 
@@ -466,6 +573,24 @@ export async function changeUserPassword(input: { email: string; currentPassword
   return homologRequest('/homolog/users/change-password', {
     method: 'POST',
     body: JSON.stringify(input),
+  });
+}
+
+export async function listUsersForManagement(actorEmail: string): Promise<ManagedUser[]> {
+  const normalizedActorEmail = String(actorEmail || '').trim().toLowerCase();
+  if (!normalizedActorEmail) return [];
+
+  return homologRequest<ManagedUser[]>(`/homolog/users?actorEmail=${encodeURIComponent(normalizedActorEmail)}`);
+}
+
+export async function updateManagedUserRole(input: { actorEmail: string; targetEmail: string; role: string }) {
+  return homologRequest<ManagedUser>('/homolog/users/role/update', {
+    method: 'POST',
+    body: JSON.stringify({
+      actorEmail: String(input.actorEmail || '').trim().toLowerCase(),
+      targetEmail: String(input.targetEmail || '').trim().toLowerCase(),
+      role: String(input.role || '').trim().toUpperCase(),
+    }),
   });
 }
 
@@ -488,6 +613,9 @@ export async function listClients() {
         telefone: pickLocalText(c.telefone, localById.get(c.id)?.telefone),
         cnpjCpf: pickLocalText(c.cnpjCpf, localById.get(c.id)?.cnpjCpf),
         endereco: pickLocalText(c.endereco, localById.get(c.id)?.endereco),
+        numero: pickLocalText((c as any).numero, (localById.get(c.id) as any)?.numero),
+        complemento: pickLocalText((c as any).complemento, (localById.get(c.id) as any)?.complemento),
+        email: pickLocalText((c as any).email, (localById.get(c.id) as any)?.email),
         responsavel: pickLocalText(c.responsavel, localById.get(c.id)?.responsavel),
         cep: c.cep || localById.get(c.id)?.cep || '',
         operationMode: c.operationMode || localById.get(c.id)?.operationMode || 'CONSIGNADO',
@@ -512,6 +640,9 @@ export async function saveClient(client: Client) {
     cnpjCpf: client.cnpjCpf || '',
     cep: client.cep || '',
     endereco: client.endereco || '',
+    numero: client.numero || '',
+    complemento: client.complemento || '',
+    email: String(client.email || '').trim().toLowerCase(),
     responsavel: client.responsavel || '',
   };
 
@@ -530,6 +661,7 @@ export async function saveClient(client: Client) {
 
   const normalizedClient: Client = {
     ...client,
+    email: String(client.email || '').trim().toLowerCase(),
     operationMode: client.operationMode || 'CONSIGNADO',
   };
 
@@ -710,6 +842,39 @@ export async function listProductsForClient(clientId: string) {
   }));
 }
 
+export async function listStreetStockByUser(): Promise<UserStreetStock> {
+  return readUserStreetStock();
+}
+
+export async function listStreetStockMovements(userEmail?: string): Promise<StreetStockMovement[]> {
+  const all = await readUserStreetStockMovements();
+  const normalized = normalizeUserStockEmail(String(userEmail || ''));
+
+  if (!normalized) {
+    return all;
+  }
+
+  return all.filter((item) => normalizeUserStockEmail(item.userEmail) === normalized);
+}
+
+export async function listStreetStockForUser(userEmail: string): Promise<Record<string, number>> {
+  const stockByUser = await readUserStreetStock();
+  const key = normalizeUserStockEmail(userEmail);
+  return stockByUser[key] || {};
+}
+
+export async function listProductsForStreetUser(userEmail: string) {
+  const [streetStock, allProducts] = await Promise.all([
+    listStreetStockForUser(userEmail),
+    getAllProducts(),
+  ]);
+
+  return allProducts.map((p) => ({
+    ...p,
+    estoque: Number(streetStock[p.id] ?? 0),
+  }));
+}
+
 export type NewProductPayload = {
   nome: string;
   linha: string;
@@ -802,6 +967,22 @@ export async function deleteProduct(productId: string): Promise<void> {
   if (changed) {
     await writeClientStock(clientStock);
   }
+
+  const streetStock = await readUserStreetStock();
+  let streetChanged = false;
+
+  Object.keys(streetStock).forEach((userEmail) => {
+    const current = streetStock[userEmail] || {};
+    if (Object.prototype.hasOwnProperty.call(current, productId)) {
+      delete current[productId];
+      streetStock[userEmail] = current;
+      streetChanged = true;
+    }
+  });
+
+  if (streetChanged) {
+    await writeUserStreetStock(streetStock);
+  }
 }
 
 async function getCurrentDistributorBalance(productId: string, localStock: Record<string, number>) {
@@ -893,6 +1074,104 @@ export async function removeProductStock(productId: string, quantity: number): P
     return true;
   }
   return false; // Insufficient stock
+}
+
+export async function transferDistributorStockToUser(
+  userEmail: string,
+  productId: string,
+  quantity: number,
+): Promise<boolean> {
+  const normalizedEmail = normalizeUserStockEmail(userEmail);
+  const qty = Number(quantity || 0);
+
+  if (!normalizedEmail || !Number.isFinite(qty) || qty <= 0) {
+    return false;
+  }
+
+  const removedFromDistributor = await removeProductStock(productId, qty);
+  if (!removedFromDistributor) {
+    return false;
+  }
+
+  const stockByUser = await readUserStreetStock();
+  const current = { ...(stockByUser[normalizedEmail] || {}) };
+  current[productId] = Number(current[productId] || 0) + qty;
+  stockByUser[normalizedEmail] = current;
+  await writeUserStreetStock(stockByUser);
+  await appendStreetStockMovement({
+    userEmail: normalizedEmail,
+    productId,
+    quantity: qty,
+    type: 'TRANSFER_DISTRIBUTOR_TO_USER',
+  });
+
+  return true;
+}
+
+export async function removeStreetStockFromUser(
+  userEmail: string,
+  productId: string,
+  quantity: number,
+): Promise<boolean> {
+  const normalizedEmail = normalizeUserStockEmail(userEmail);
+  const qty = Number(quantity || 0);
+
+  if (!normalizedEmail || !Number.isFinite(qty) || qty <= 0) {
+    return false;
+  }
+
+  const stockByUser = await readUserStreetStock();
+  const current = { ...(stockByUser[normalizedEmail] || {}) };
+  const available = Number(current[productId] || 0);
+
+  if (available < qty) {
+    return false;
+  }
+
+  const nextQty = available - qty;
+  if (nextQty <= 0) {
+    delete current[productId];
+  } else {
+    current[productId] = nextQty;
+  }
+
+  stockByUser[normalizedEmail] = current;
+  await writeUserStreetStock(stockByUser);
+  await appendStreetStockMovement({
+    userEmail: normalizedEmail,
+    productId,
+    quantity: qty,
+    type: 'CONSUMPTION',
+  });
+
+  return true;
+}
+
+export async function addStreetStockToUser(
+  userEmail: string,
+  productId: string,
+  quantity: number,
+): Promise<boolean> {
+  const normalizedEmail = normalizeUserStockEmail(userEmail);
+  const qty = Number(quantity || 0);
+
+  if (!normalizedEmail || !Number.isFinite(qty) || qty <= 0) {
+    return false;
+  }
+
+  const stockByUser = await readUserStreetStock();
+  const current = { ...(stockByUser[normalizedEmail] || {}) };
+  current[productId] = Number(current[productId] || 0) + qty;
+  stockByUser[normalizedEmail] = current;
+  await writeUserStreetStock(stockByUser);
+  await appendStreetStockMovement({
+    userEmail: normalizedEmail,
+    productId,
+    quantity: qty,
+    type: 'RETURN_TO_USER',
+  });
+
+  return true;
 }
 
 export async function saveMeasurement(m: Measurement) {
