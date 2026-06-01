@@ -2,23 +2,23 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Alert, ScrollView, Text, View } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../routes';
-import Input from '../components/Input';
-import Button from '../components/Button';
-import BymenLoadingOverlay from '../components/BymenLoadingOverlay';
 import { useResponsive } from '../hooks/useResponsive';
 import { getCurrentUser } from '../services/api';
 import { canAccessGeneralSettings, getUserAppRole } from '../services/access';
-import { getGeneralSettings, saveGeneralSettings } from '../services/settings';
-import { createKeyboardFocusHandler } from '../utils/keyboardFocus';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ConfiguracoesGerais'>;
 
+const INSTALLMENT_RATE_ROWS = [
+  { installments: 2, rate: '9,60%' },
+  { installments: 3, rate: '11,20%' },
+  { installments: 4, rate: '11,40%' },
+  { installments: 5, rate: '14,30%' },
+  { installments: 6, rate: '14,30%' },
+];
+
 export default function ConfiguracoesGeraisScreen({ navigation }: Props) {
   const scrollRef = useRef<ScrollView>(null);
-  const handleFieldFocus = createKeyboardFocusHandler(scrollRef, 24);
   const { padding, fontSize } = useResponsive();
-  const [interestRate, setInterestRate] = useState('2,49');
-  const [loading, setLoading] = useState(false);
   const [authorized, setAuthorized] = useState(false);
 
   useEffect(() => {
@@ -37,54 +37,10 @@ export default function ConfiguracoesGeraisScreen({ navigation }: Props) {
       }
 
       setAuthorized(true);
-      const settings = await getGeneralSettings();
-      setInterestRate(String(settings.creditInstallmentMonthlyInterestPercent).replace('.', ','));
     }
 
     loadSettings();
   }, []);
-
-  function normalizePercentInput(value: string) {
-    const clean = String(value || '')
-      .replace(/[^\d,\.]/g, '')
-      .replace('.', ',');
-
-    const parts = clean.split(',');
-    if (parts.length <= 1) return clean;
-    return `${parts[0]},${parts.slice(1).join('')}`;
-  }
-
-  async function handleSave() {
-    const numeric = Number(String(interestRate || '').replace(',', '.'));
-
-    if (!Number.isFinite(numeric)) {
-      Alert.alert('Validação', 'Informe uma taxa válida de juros ao mês.');
-      return;
-    }
-
-    if (numeric < 0 || numeric > 100) {
-      Alert.alert('Validação', 'A taxa deve estar entre 0 e 100%.');
-      return;
-    }
-
-    setLoading(true);
-    try {
-      await saveGeneralSettings({
-        creditInstallmentMonthlyInterestPercent: numeric,
-      });
-
-      Alert.alert('Sucesso', 'Configurações gerais salvas com sucesso.', [
-        {
-          text: 'OK',
-          onPress: () => navigation.goBack(),
-        },
-      ]);
-    } catch {
-      Alert.alert('Erro', 'Não foi possível salvar as configurações gerais.');
-    } finally {
-      setLoading(false);
-    }
-  }
 
   return (
     <View style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
@@ -109,27 +65,40 @@ export default function ConfiguracoesGeraisScreen({ navigation }: Props) {
               }}
             >
               <Text style={{ color: '#374151', fontSize: fontSize.small }}>
-                Esta taxa é usada para calcular juros no pagamento em crédito parcelado (2x até 12x).
+                A taxa de parcelamento no crédito agora é fixa por parcela (2x até 6x) e não é mais editável.
               </Text>
             </View>
 
-            <Input
-              label="Taxa de juros mensal do parcelado (%)"
-              value={interestRate}
-              onChangeText={(value) => setInterestRate(normalizePercentInput(value))}
-              onFocus={handleFieldFocus}
-              placeholder="Ex: 2,49"
-              keyboardType="numeric"
-            />
-
-            <Button
-              title={loading ? 'Salvando...' : 'Salvar configurações gerais'}
-              icon="save-outline"
-              onPress={handleSave}
-              disabled={loading}
-            />
+            <View
+              style={{
+                backgroundColor: '#FFFFFF',
+                borderWidth: 1,
+                borderColor: '#E5E7EB',
+                borderRadius: 12,
+                overflow: 'hidden',
+              }}
+            >
+              <View style={{ flexDirection: 'row', backgroundColor: '#F3F4F6', paddingHorizontal: 12, paddingVertical: 10 }}>
+                <Text style={{ flex: 1, color: '#111827', fontWeight: '700' }}>Parcelas</Text>
+                <Text style={{ flex: 1, color: '#111827', fontWeight: '700', textAlign: 'right' }}>Taxa aplicada</Text>
+              </View>
+              {INSTALLMENT_RATE_ROWS.map((row) => (
+                <View
+                  key={row.installments}
+                  style={{
+                    flexDirection: 'row',
+                    paddingHorizontal: 12,
+                    paddingVertical: 10,
+                    borderTopWidth: 1,
+                    borderTopColor: '#F3F4F6',
+                  }}
+                >
+                  <Text style={{ flex: 1, color: '#374151' }}>{row.installments}x</Text>
+                  <Text style={{ flex: 1, color: '#1D4ED8', fontWeight: '700', textAlign: 'right' }}>{row.rate}</Text>
+                </View>
+              ))}
+            </View>
           </ScrollView>
-          <BymenLoadingOverlay visible={loading} label="Salvando configurações gerais..." />
         </>
       ) : null}
     </View>

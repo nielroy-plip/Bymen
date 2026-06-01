@@ -30,7 +30,6 @@ import OperationContextHeader from '../components/OperationContextHeader';
 import BymenLoader from '../components/BymenLoader';
 import BymenLoadingOverlay from '../components/BymenLoadingOverlay';
 import { getProductUnit } from '../utils/product';
-import { getGeneralSettings } from '../services/settings';
 import { getUserAppRole } from '../services/access';
 
 const BACKEND_URL = API_BASE_URL;
@@ -47,6 +46,13 @@ const PAYMENT_OPTIONS: Array<{ id: PaymentMethod; label: string }> = [
 ];
 
 const PAYMENT_DISCOUNT_PERCENT = 5;
+const INSTALLMENT_RATE_BY_COUNT: Record<number, number> = {
+  2: 9.6,
+  3: 11.2,
+  4: 11.4,
+  5: 14.3,
+  6: 14.3,
+};
 
 export default function FinalizarMedicaoScreen({ navigation, route }: Props) {
   const scrollRef = useRef<ScrollView>(null);
@@ -74,9 +80,6 @@ export default function FinalizarMedicaoScreen({ navigation, route }: Props) {
   );
   const [isCardInstallment, setIsCardInstallment] = useState(Boolean(params?.isCreditInstallment));
   const [installments, setInstallments] = useState(Number(params?.installmentCount || 2));
-  const [creditMonthlyInterestPercent, setCreditMonthlyInterestPercent] = useState(
-    Number(params?.creditMonthlyInterestPercent || 2.49),
-  );
   const [observacoes, setObservacoes] = useState(observacoesParam || '');
 
   // Estado local para produtos bonificados
@@ -91,6 +94,7 @@ export default function FinalizarMedicaoScreen({ navigation, route }: Props) {
   const [signatureDataUrl, setSignatureDataUrl] = useState<string | undefined>(signatureParam);
   const hasSignature = Boolean(signatureDataUrl && signatureDataUrl.trim().length > 0);
   const [isFinalizando, setIsFinalizando] = useState(false);
+  const [medicaoFinalizada, setMedicaoFinalizada] = useState(false);
   const [finalizedMeasurementId, setFinalizedMeasurementId] = useState<string | undefined>(undefined);
   const [distributorStockByProductId, setDistributorStockByProductId] = useState<Record<string, number>>({});
   const [renderDetailedRows, setRenderDetailedRows] = useState(false);
@@ -108,12 +112,6 @@ export default function FinalizarMedicaoScreen({ navigation, route }: Props) {
       setDistributorStockByProductId(stockMap);
     });
   }, [clientId]);
-
-  useEffect(() => {
-    getGeneralSettings().then((settings) => {
-      setCreditMonthlyInterestPercent(Number(settings.creditInstallmentMonthlyInterestPercent || 2.49));
-    });
-  }, []);
 
   useEffect(() => {
     const showSubscription = Keyboard.addListener('keyboardDidShow', (event) => {
@@ -140,6 +138,21 @@ export default function FinalizarMedicaoScreen({ navigation, route }: Props) {
       task.cancel();
     };
   }, [clientId, dateTime]);
+
+  useEffect(() => {
+    if (!medicaoFinalizada) return;
+
+    const unsubscribe = navigation.addListener('beforeRemove', (event) => {
+      if (event.data.action.type !== 'GO_BACK' && event.data.action.type !== 'POP') {
+        return;
+      }
+
+      event.preventDefault();
+      navigation.navigate('Dashboard');
+    });
+
+    return unsubscribe;
+  }, [navigation, medicaoFinalizada]);
 
   const bancadaRowsWithQuantity = useMemo(
     () => (bancadaRows as any[]).filter((r: any) => Number(r.quantidadeComprada ?? 0) > 0),
@@ -297,10 +310,14 @@ export default function FinalizarMedicaoScreen({ navigation, route }: Props) {
 
   const creditInterestValue = useMemo(() => {
     if (paymentMethod !== 'CARTAO' || !isCardInstallment) return 0;
-    const monthlyRate = creditMonthlyInterestPercent / 100;
-    const factor = Math.pow(1 + monthlyRate, installments);
-    return totalGeralComDesconto * (factor - 1);
-  }, [paymentMethod, isCardInstallment, installments, totalGeralComDesconto, creditMonthlyInterestPercent]);
+    const installmentRatePercent = Number(INSTALLMENT_RATE_BY_COUNT[installments] || 0);
+    return totalGeralComDesconto * (installmentRatePercent / 100);
+  }, [paymentMethod, isCardInstallment, installments, totalGeralComDesconto]);
+
+  const appliedInstallmentRatePercent = useMemo(
+    () => Number(INSTALLMENT_RATE_BY_COUNT[installments] || 0),
+    [installments],
+  );
 
   const totalFinal = useMemo(() => {
     if (paymentMethod !== 'CARTAO' || !isCardInstallment) return totalGeralComDesconto;
@@ -381,7 +398,7 @@ export default function FinalizarMedicaoScreen({ navigation, route }: Props) {
         paymentMethod,
         isCreditInstallment: paymentMethod === 'CARTAO' ? isCardInstallment : false,
         installmentCount: paymentMethod === 'CARTAO' && isCardInstallment ? installments : 1,
-        creditMonthlyInterestPercent: paymentMethod === 'CARTAO' && isCardInstallment ? creditMonthlyInterestPercent : 0,
+        creditMonthlyInterestPercent: paymentMethod === 'CARTAO' && isCardInstallment ? appliedInstallmentRatePercent : 0,
         creditInterestValue: paymentMethod === 'CARTAO' && isCardInstallment ? creditInterestValue : 0,
       });
 
@@ -431,6 +448,11 @@ export default function FinalizarMedicaoScreen({ navigation, route }: Props) {
   }
 
   async function handleFinalizarMedicao() {
+        if (medicaoFinalizada) {
+          Alert.alert('Medição já finalizada', 'Esta medição já foi finalizada. Use voltar para retornar ao início.');
+          return;
+        }
+
     if (!client) {
       Alert.alert('Erro', 'Cliente não encontrado');
       return;
@@ -561,7 +583,7 @@ export default function FinalizarMedicaoScreen({ navigation, route }: Props) {
         paymentMethod,
         isCreditInstallment: paymentMethod === 'CARTAO' ? isCardInstallment : false,
         installmentCount: paymentMethod === 'CARTAO' && isCardInstallment ? installments : 1,
-        creditMonthlyInterestPercent: paymentMethod === 'CARTAO' && isCardInstallment ? creditMonthlyInterestPercent : 0,
+        creditMonthlyInterestPercent: paymentMethod === 'CARTAO' && isCardInstallment ? appliedInstallmentRatePercent : 0,
         creditInterestValue: paymentMethod === 'CARTAO' && isCardInstallment ? creditInterestValue : 0,
         pdfUri: pdfUri || undefined,
         signatureDataUrl,
@@ -573,13 +595,13 @@ export default function FinalizarMedicaoScreen({ navigation, route }: Props) {
       setFinalizedMeasurementId(medicaoId);
 
       if (!ENABLE_BLING_SYNC) {
+        setMedicaoFinalizada(true);
         Alert.alert(
           'Sucesso',
-          'Medição finalizada e estoque atualizado com sucesso.',
+          'Medição finalizada e estoque atualizado com sucesso. Você pode usar voltar para retornar ao início.',
           [
             {
               text: 'OK',
-              onPress: () => navigation.replace('ClienteDetalhes', { clientId }),
             },
           ]
         );
@@ -618,13 +640,13 @@ export default function FinalizarMedicaoScreen({ navigation, route }: Props) {
           'SIGNED'
         );
 
+        setMedicaoFinalizada(true);
         Alert.alert(
           'Sucesso',
-          'Medição finalizada, estoque atualizado e sincronização com Bling realizada.',
+          'Medição finalizada, estoque atualizado e sincronização com Bling realizada. Você pode usar voltar para retornar ao início.',
           [
             {
               text: 'OK',
-              onPress: () => navigation.replace('ClienteDetalhes', { clientId }),
             },
           ]
         );
@@ -649,9 +671,10 @@ export default function FinalizarMedicaoScreen({ navigation, route }: Props) {
           'FINALIZED'
         );
 
+        setMedicaoFinalizada(true);
         Alert.alert(
           'Finalizada com pendência',
-          'Medição salva e estoque atualizado. Não foi possível sincronizar com o Bling agora.',
+          'Medição salva e estoque atualizado. Não foi possível sincronizar com o Bling agora. Você pode usar voltar para retornar ao início.',
           [
             {
               text: 'Ver pendências',
@@ -659,7 +682,6 @@ export default function FinalizarMedicaoScreen({ navigation, route }: Props) {
             },
             {
               text: 'OK',
-              onPress: () => navigation.replace('ClienteDetalhes', { clientId }),
             },
           ]
         );
@@ -934,7 +956,7 @@ export default function FinalizarMedicaoScreen({ navigation, route }: Props) {
                   <>
                     <Text style={{ color: '#111827', fontWeight: '700', marginTop: 12, marginBottom: 8 }}>Quantidade de parcelas</Text>
                     <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-                      {Array.from({ length: 11 }, (_, i) => i + 2).map((n) => (
+                      {Array.from({ length: 5 }, (_, i) => i + 2).map((n) => (
                         <TouchableOpacity
                           key={n}
                           onPress={() => setInstallments(n)}
@@ -954,7 +976,7 @@ export default function FinalizarMedicaoScreen({ navigation, route }: Props) {
 
                     <View style={{ marginTop: 10, backgroundColor: '#EFF6FF', borderRadius: 8, padding: 10, borderWidth: 1, borderColor: '#BFDBFE' }}>
                       <Text style={{ color: '#1D4ED8', fontWeight: '700', marginBottom: 4 }}>Simulação de parcelamento</Text>
-                      <Text style={{ color: '#1F2937' }}>Juros mensal: {creditMonthlyInterestPercent.toFixed(2).replace('.', ',')}%</Text>
+                      <Text style={{ color: '#1F2937' }}>Taxa da parcela ({installments}x): {appliedInstallmentRatePercent.toFixed(2).replace('.', ',')}%</Text>
                       <Text style={{ color: '#1F2937' }}>Parcela: {installments}x de {formatCurrency(installmentValue)}</Text>
                       <Text style={{ color: '#1F2937' }}>Acréscimo total: {formatCurrency(creditInterestValue)}</Text>
                       <Text style={{ color: '#1D4ED8', fontWeight: '700' }}>Total com juros: {formatCurrency(totalFinal)}</Text>
@@ -1035,13 +1057,11 @@ export default function FinalizarMedicaoScreen({ navigation, route }: Props) {
 
         <View style={{ height: 12 }} />
         <Button
-          title={isFinalizando ? 'Finalizando medição...' : 'Finalizar medição'}
+          title={medicaoFinalizada ? 'Medição finalizada' : isFinalizando ? 'Finalizando medição...' : 'Finalizar medição'}
           icon="checkmark-circle-outline"
           onPress={handleFinalizarMedicao}
-          disabled={isFinalizando || bonusStockIssues.length > 0 || !hasSignature}
+          disabled={isFinalizando || bonusStockIssues.length > 0 || !hasSignature || medicaoFinalizada}
         />
-        <View style={{ height: 12 }} />
-        <Button title="Gerar PDF" icon="document-outline" onPress={handleGerarPDF} disabled={!hasSignature} />
         <View style={{ height: 12 }} />
         <Button
           title="Enviar via WhatsApp"

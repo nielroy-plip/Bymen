@@ -88,6 +88,66 @@ Comportamento:
 - tenta emissão de NF;
 - grava na `Medicao` local: `blingOrderNumber`, `invoiceAccessKey`, `invoicePdfUrl`, `finalizedAt`.
 
+## 6) Recebimento de webhooks do Bling
+
+Endpoint principal:
+
+`POST /api/integrations/bling/webhooks`
+
+Endpoint alternativo por tópico:
+
+`POST /api/integrations/bling/webhooks/:topic`
+
+Comportamento atual:
+
+- identifica webhook de `Produtos` e sincroniza cadastro local (nome, linha, capacidade, preços);
+- identifica webhook de `Estoques` e ajusta saldo local com movimentação automática em `InventoryMovement` (`ENTRADA` ou `RETIRADA`) na localização `bling-main`;
+- registra cada recebimento em `IntegrationLog`.
+
+Segurança opcional:
+
+- configure `BLING_WEBHOOK_TOKEN` no backend;
+- envie o mesmo token no Bling para o header `x-webhook-token` (ou `Authorization: Bearer <token>`).
+
+URL para cadastro no Bling (exemplo com ambiente atual do app):
+
+`https://site--bymen--8f4tg2jylx4z.code.run/api/integrations/bling/webhooks`
+
+## 7) OAuth (autorização do aplicativo)
+
+Gerar URL de autorização:
+
+`GET /api/integrations/bling/oauth/authorize-url`
+
+Opcional: informar `state` na query.
+
+Callback para receber o `code`:
+
+`GET /api/integrations/bling/oauth/callback`
+
+Troca de `code` por tokens:
+
+`POST /api/integrations/bling/oauth/token`
+
+Body:
+
+```json
+{
+  "code": "authorization_code_recebido_no_callback"
+}
+```
+
+Variáveis necessárias no backend:
+
+- `BLING_CLIENT_ID`
+- `BLING_CLIENT_SECRET`
+- `BLING_OAUTH_REDIRECT_URI`
+
+Importante:
+
+- o `BLING_OAUTH_REDIRECT_URI` precisa ser exatamente o mesmo cadastrado no aplicativo do Bling (Link de redirecionamento);
+- para facilitar, use no Bling: `https://site--bymen--8f4tg2jylx4z.code.run/api/integrations/bling/oauth/callback`.
+
 ## Observações de consistência
 
 - toda chamada é logada em `IntegrationLog`;

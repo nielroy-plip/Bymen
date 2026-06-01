@@ -6,7 +6,15 @@ import Button from '../components/Button';
 import Card from '../components/Card';
 import Input from '../components/Input';
 import { Client } from '../data/clients';
-import { getCurrentUser, listClients, listProducts, listProductsForStreetUser, SaleItem } from '../services/api';
+import {
+  getCurrentUser,
+  listClients,
+  listProducts,
+  listProductsForStreetUser,
+  listProductVisibilityRules,
+  ProductVisibilityMap,
+  SaleItem,
+} from '../services/api';
 import { formatCurrency } from '../utils/format';
 import { sortByCatalogOrder } from '../utils/productOrder';
 import { getUserAppRole } from '../services/access';
@@ -60,11 +68,17 @@ export default function VendasScreen({ navigation, route }: Props) {
   const [activeTab, setActiveTab] = useState<'produtos' | 'bancada'>('produtos');
   const [quantities, setQuantities] = useState<Record<string, string>>({});
   const [stockScopeLabel, setStockScopeLabel] = useState('Geral da empresa');
+  const [visibilityRules, setVisibilityRules] = useState<ProductVisibilityMap>({});
 
   useEffect(() => {
     async function loadData() {
-      const [clients, currentUser] = await Promise.all([listClients(), getCurrentUser()]);
+      const [clients, currentUser, visibility] = await Promise.all([
+        listClients(),
+        getCurrentUser(),
+        listProductVisibilityRules(),
+      ]);
       setClient(clients.find((c) => c.id === clientId));
+      setVisibilityRules(visibility);
 
       const role = getUserAppRole(currentUser);
       const userEmail = String(currentUser?.email || '').trim().toLowerCase();
@@ -116,6 +130,13 @@ export default function VendasScreen({ navigation, route }: Props) {
 
   const items = useMemo<SaleItem[]>(() => {
     return products
+      .filter((p) => {
+        const hidden = visibilityRules[p.id]?.hiddenIn || [];
+        if (p.id.startsWith('b')) {
+          return !hidden.includes('VENDAS_BANCADA');
+        }
+        return !hidden.includes('VENDAS_PRODUTOS');
+      })
       .map((p) => {
         const quantidade = Number(quantities[p.id] || 0);
         const { unitPrice: precoAplicado, tier } = getPricingForQuantity(p, quantidade);
@@ -134,11 +155,20 @@ export default function VendasScreen({ navigation, route }: Props) {
         };
       })
       .filter((item) => item.quantidade > 0);
-  }, [products, quantities]);
+  }, [products, quantities, visibilityRules]);
 
   const displayedProducts = useMemo(
-    () => products.filter((p) => (activeTab === 'bancada' ? p.id.startsWith('b') : !p.id.startsWith('b'))),
-    [activeTab, products],
+    () =>
+      products.filter((p) => {
+        const isBancada = p.id.startsWith('b');
+        const matchesTab = activeTab === 'bancada' ? isBancada : !isBancada;
+        if (!matchesTab) return false;
+
+        const hidden = visibilityRules[p.id]?.hiddenIn || [];
+        if (isBancada) return !hidden.includes('VENDAS_BANCADA');
+        return !hidden.includes('VENDAS_PRODUTOS');
+      }),
+    [activeTab, products, visibilityRules],
   );
 
   const total = useMemo(() => items.reduce((acc, item) => acc + item.valorTotal, 0), [items]);

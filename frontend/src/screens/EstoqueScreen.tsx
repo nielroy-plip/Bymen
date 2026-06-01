@@ -14,9 +14,13 @@ import {
   deleteProduct,
   getCurrentUser,
   listUsersForManagement,
-  listProductsForStreetUser,
   transferDistributorStockToUser,
   ManagedUser,
+  ProductVisibilityMap,
+  ProductVisibilityTarget,
+  listProductVisibilityRules,
+  restoreProductVisibility,
+  setProductVisibilityForFlow,
 } from '../services/api';
 import { Product } from '../components/ProductRow';
 import { Ionicons } from '@expo/vector-icons';
@@ -55,6 +59,7 @@ export default function EstoqueScreen({ navigation }: Props) {
   const [isGestor, setIsGestor] = useState(false);
   const [streetUsers, setStreetUsers] = useState<ManagedUser[]>([]);
   const [currentUserEmail, setCurrentUserEmail] = useState('');
+  const [visibilityRules, setVisibilityRules] = useState<ProductVisibilityMap>({});
   const [criticalThresholds, setCriticalThresholds] = useState<StockCriticalThresholds>({});
   const [criticalInputs, setCriticalInputs] = useState<Record<string, string>>({});
   const [savingCriticalByProduct, setSavingCriticalByProduct] = useState<Record<string, boolean>>({});
@@ -167,20 +172,22 @@ export default function EstoqueScreen({ navigation }: Props) {
   );
 
   async function loadProducts() {
-    const [thresholds, user] = await Promise.all([
+    const [thresholds, user, visibility] = await Promise.all([
       getStockCriticalThresholds(),
       getCurrentUser(),
+      listProductVisibilityRules(),
     ]);
 
     const userEmail = String(user?.email || '').trim().toLowerCase();
     const appRole = getUserAppRole(user);
     const gestor = canManageUsers(appRole);
-    const prods = gestor ? await listProducts() : await listProductsForStreetUser(userEmail);
+    const prods = await listProducts();
 
     setProducts(sortByCatalogOrder(prods));
     setCriticalThresholds(thresholds);
     setIsGestor(gestor);
     setCurrentUserEmail(userEmail);
+    setVisibilityRules(visibility);
 
     if (gestor && userEmail) {
       try {
@@ -457,6 +464,90 @@ export default function EstoqueScreen({ navigation }: Props) {
     );
   }
 
+  function getProductTargetByTab(productId: string, flow: 'VENDAS' | 'CONSIGNADO'): ProductVisibilityTarget {
+    const isBancada = String(productId || '').startsWith('b');
+    if (flow === 'VENDAS') {
+      return isBancada ? 'VENDAS_BANCADA' : 'VENDAS_PRODUTOS';
+    }
+    return isBancada ? 'CONSIGNADO_BANCADA' : 'CONSIGNADO_PRODUTOS';
+  }
+
+  function isHiddenInTarget(productId: string, target: ProductVisibilityTarget): boolean {
+    const hiddenIn = visibilityRules[productId]?.hiddenIn || [];
+    return hiddenIn.includes(target);
+  }
+
+  function getProductVisibilityNote(productId: string) {
+    const hiddenIn = visibilityRules[productId]?.hiddenIn || [];
+    if (hiddenIn.length === 0) return null;
+
+    const labels: Record<ProductVisibilityTarget, string> = {
+      VENDAS_PRODUTOS: 'Vendas/Produtos',
+      VENDAS_BANCADA: 'Vendas/Bancada',
+      CONSIGNADO_PRODUTOS: 'Consignado/Produtos',
+      CONSIGNADO_BANCADA: 'Consignado/Bancada',
+    };
+
+    return hiddenIn.map((item) => labels[item]).join(' • ');
+  }
+
+  async function toggleHideProductInFlow(productId: string, flow: 'VENDAS' | 'CONSIGNADO') {
+    const target = getProductTargetByTab(productId, flow);
+    const hidden = isHiddenInTarget(productId, target);
+    await setProductVisibilityForFlow(productId, target, !hidden);
+    await loadProducts();
+
+    Alert.alert(
+      'Sucesso',
+      hidden
+        ? `Produto restaurado na aba ${flow === 'VENDAS' ? 'Vendas' : 'Consignado'}.`
+        : `Produto removido da aba ${flow === 'VENDAS' ? 'Vendas' : 'Consignado'}.`,
+    );
+  }
+
+  function handleProductRemoveActions(product: Product) {
+    Alert.alert(
+      'Remover produto',
+      'Escolha como deseja remover este item.',
+      [
+        {
+          text: isHiddenInTarget(product.id, getProductTargetByTab(product.id, 'VENDAS'))
+            ? 'Restaurar em Vendas'
+            : 'Remover da aba Vendas',
+          onPress: () => {
+            void toggleHideProductInFlow(product.id, 'VENDAS');
+          },
+        },
+        {
+          text: isHiddenInTarget(product.id, getProductTargetByTab(product.id, 'CONSIGNADO'))
+            ? 'Restaurar em Consignado'
+            : 'Remover da aba Consignado',
+          onPress: () => {
+            void toggleHideProductInFlow(product.id, 'CONSIGNADO');
+          },
+        },
+        {
+          text: 'Restaurar todas as visibilidades',
+          onPress: () => {
+            void (async () => {
+              await restoreProductVisibility(product.id);
+              await loadProducts();
+              Alert.alert('Sucesso', 'Visibilidade restaurada para todas as abas.');
+            })();
+          },
+        },
+        {
+          text: 'Excluir do app',
+          style: 'destructive',
+          onPress: () => {
+            void handleDeleteProduct(product);
+          },
+        },
+        { text: 'Cancelar', style: 'cancel' },
+      ],
+    );
+  }
+
   return (
     <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
       <KeyboardAvoidingView
@@ -687,12 +778,17 @@ export default function EstoqueScreen({ navigation }: Props) {
               <Card>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                   <Text style={{ fontSize: 18, fontWeight: '600', color: '#111827', flex: 1, marginRight: 12 }}>{p.nome}</Text>
-                  <Pressable onPress={() => handleDeleteProduct(p)}>
-                    <Text style={{ color: '#DC2626', fontWeight: '700' }}>Excluir</Text>
+                  <Pressable onPress={() => handleProductRemoveActions(p)}>
+                    <Text style={{ color: '#DC2626', fontWeight: '700' }}>Remover</Text>
                   </Pressable>
                 </View>
                 <Text style={{ color: '#6B7280' }}>Linha: {p.linha}</Text>
                 <Text style={{ color: '#6B7280' }}>Estoque Atual: {p.estoque}</Text>
+                {getProductVisibilityNote(p.id) && (
+                  <Text style={{ color: '#0F766E', marginTop: 2 }}>
+                    Oculto em: {getProductVisibilityNote(p.id)}
+                  </Text>
+                )}
                 <Text style={{ color: '#92400E', fontWeight: '600' }}>
                   Limite crítico: {getProductCriticalThreshold(p.id, criticalThresholds)}
                 </Text>
@@ -749,13 +845,18 @@ export default function EstoqueScreen({ navigation }: Props) {
               <Card>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                   <Text style={{ fontSize: 18, fontWeight: '600', color: '#111827', flex: 1, marginRight: 12 }}>{p.nome}</Text>
-                  <Pressable onPress={() => handleDeleteProduct(p)}>
-                    <Text style={{ color: '#DC2626', fontWeight: '700' }}>Excluir</Text>
+                  <Pressable onPress={() => handleProductRemoveActions(p)}>
+                    <Text style={{ color: '#DC2626', fontWeight: '700' }}>Remover</Text>
                   </Pressable>
                 </View>
                 <Text style={{ color: '#6B7280' }}>Linha: {p.linha}</Text>
                 <Text style={{ color: '#6B7280' }}>Capacidade: {p.cap}{getProductUnit(p.nome)}</Text>
                 <Text style={{ color: '#6B7280' }}>Estoque Atual: {p.estoque}</Text>
+                {getProductVisibilityNote(p.id) && (
+                  <Text style={{ color: '#0F766E', marginTop: 2 }}>
+                    Oculto em: {getProductVisibilityNote(p.id)}
+                  </Text>
+                )}
                 <Text style={{ color: '#92400E', fontWeight: '600' }}>
                   Limite crítico: {getProductCriticalThreshold(p.id, criticalThresholds)}
                 </Text>

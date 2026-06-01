@@ -192,6 +192,7 @@ const CLIENTS_KEY = 'bymen_clients';
 const SYNC_QUEUE_KEY = 'bymen_sync_queue';
 const CURRENT_USER_KEY = 'bymen_current_user';
 const CUSTOM_PRODUCTS_KEY = 'bymen_custom_products';
+const PRODUCT_VISIBILITY_KEY = 'bymen_product_visibility';
 
 const STOCK_REMOTE_REFRESH_INTERVAL_MS = 15000;
 let lastStockRemoteFetchAt = 0;
@@ -255,6 +256,19 @@ type UserRegistryItem = {
   username?: string;
   phone?: string;
 };
+
+export type ProductVisibilityTarget =
+  | 'VENDAS_PRODUTOS'
+  | 'VENDAS_BANCADA'
+  | 'CONSIGNADO_PRODUTOS'
+  | 'CONSIGNADO_BANCADA';
+
+export type ProductVisibilityRule = {
+  deleted?: boolean;
+  hiddenIn?: ProductVisibilityTarget[];
+};
+
+export type ProductVisibilityMap = Record<string, ProductVisibilityRule>;
 
 function formatUserFacingError(rawMessage: string, status?: number) {
   const normalized = (rawMessage || '').toLowerCase();
@@ -394,9 +408,87 @@ async function writeCustomProducts(products: Product[]): Promise<void> {
   await AsyncStorage.setItem(CUSTOM_PRODUCTS_KEY, JSON.stringify(products));
 }
 
+async function readProductVisibilityMap(): Promise<ProductVisibilityMap> {
+  const raw = await AsyncStorage.getItem(PRODUCT_VISIBILITY_KEY);
+  if (!raw) return {};
+
+  try {
+    const parsed = JSON.parse(raw) as ProductVisibilityMap;
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+async function writeProductVisibilityMap(map: ProductVisibilityMap): Promise<void> {
+  await AsyncStorage.setItem(PRODUCT_VISIBILITY_KEY, JSON.stringify(map));
+}
+
+function normalizeHiddenTargets(value: ProductVisibilityTarget[] | undefined): ProductVisibilityTarget[] {
+  const allowed: ProductVisibilityTarget[] = [
+    'VENDAS_PRODUTOS',
+    'VENDAS_BANCADA',
+    'CONSIGNADO_PRODUTOS',
+    'CONSIGNADO_BANCADA',
+  ];
+
+  return Array.from(new Set((value || []).filter((item) => allowed.includes(item))));
+}
+
+function isProductHiddenInTarget(
+  map: ProductVisibilityMap,
+  productId: string,
+  target: ProductVisibilityTarget,
+): boolean {
+  const hiddenIn = normalizeHiddenTargets(map[productId]?.hiddenIn);
+  return hiddenIn.includes(target);
+}
+
 async function getAllProducts(): Promise<Product[]> {
+  const visibility = await readProductVisibilityMap();
   const custom = await readCustomProducts();
-  return [...PRODUCTS, ...PRODUTOS_BANCADA, ...custom];
+  return [...PRODUCTS, ...PRODUTOS_BANCADA, ...custom].filter(
+    (product) => !Boolean(visibility[product.id]?.deleted),
+  );
+}
+
+export async function listProductVisibilityRules(): Promise<ProductVisibilityMap> {
+  return readProductVisibilityMap();
+}
+
+export async function setProductVisibilityForFlow(
+  productId: string,
+  target: ProductVisibilityTarget,
+  hidden: boolean,
+): Promise<ProductVisibilityMap> {
+  const map = await readProductVisibilityMap();
+  const current = map[productId] || {};
+  const currentHidden = normalizeHiddenTargets(current.hiddenIn);
+
+  const nextHidden = hidden
+    ? Array.from(new Set([...currentHidden, target]))
+    : currentHidden.filter((item) => item !== target);
+
+  if (!current.deleted && nextHidden.length === 0) {
+    delete map[productId];
+  } else {
+    map[productId] = {
+      ...current,
+      hiddenIn: nextHidden,
+    };
+  }
+
+  await writeProductVisibilityMap(map);
+  return map;
+}
+
+export async function restoreProductVisibility(productId: string): Promise<ProductVisibilityMap> {
+  const map = await readProductVisibilityMap();
+  if (map[productId]) {
+    delete map[productId];
+    await writeProductVisibilityMap(map);
+  }
+  return map;
 }
 
 async function readClients(): Promise<Client[]> {
@@ -817,6 +909,7 @@ export async function listProducts() {
 }
 
 export async function listProductsForClient(clientId: string) {
+  const visibility = await readProductVisibilityMap();
   const clientStock = await readClientStock();
   const stock = clientStock[clientId] || {};
   const allMeasurements = await readAll();
@@ -834,7 +927,10 @@ export async function listProductsForClient(clientId: string) {
   });
 
   const allProducts = await getAllProducts();
-  const consignadoProducts = allProducts.filter((p) => !p.id.startsWith('b'));
+  const consignadoProducts = allProducts.filter(
+    (p) =>
+      !p.id.startsWith('b') && !isProductHiddenInTarget(visibility, p.id, 'CONSIGNADO_PRODUTOS'),
+  );
 
   return consignadoProducts.map((p) => ({
     ...p,
@@ -873,6 +969,17 @@ export async function listProductsForStreetUser(userEmail: string) {
     ...p,
     estoque: Number(streetStock[p.id] ?? 0),
   }));
+}
+
+export async function listBancadaProductsForConsignado(): Promise<Product[]> {
+  const [allProducts, visibility] = await Promise.all([
+    getAllProducts(),
+    readProductVisibilityMap(),
+  ]);
+
+  return allProducts.filter(
+    (p) => p.id.startsWith('b') && !isProductHiddenInTarget(visibility, p.id, 'CONSIGNADO_BANCADA'),
+  );
 }
 
 export type NewProductPayload = {
@@ -941,12 +1048,19 @@ export async function deleteProduct(productId: string): Promise<void> {
   const custom = await readCustomProducts();
   const existsInCustom = custom.some((item) => item.id === productId);
 
-  if (!existsInCustom) {
-    throw new Error('Apenas produtos personalizados podem ser excluídos.');
+  if (existsInCustom) {
+    const nextCustom = custom.filter((item) => item.id !== productId);
+    await writeCustomProducts(nextCustom);
   }
 
-  const nextCustom = custom.filter((item) => item.id !== productId);
-  await writeCustomProducts(nextCustom);
+  const visibility = await readProductVisibilityMap();
+  const existingRule = visibility[productId] || {};
+  visibility[productId] = {
+    ...existingRule,
+    deleted: true,
+    hiddenIn: normalizeHiddenTargets(existingRule.hiddenIn),
+  };
+  await writeProductVisibilityMap(visibility);
 
   const stock = await readStock();
   if (Object.prototype.hasOwnProperty.call(stock, productId)) {

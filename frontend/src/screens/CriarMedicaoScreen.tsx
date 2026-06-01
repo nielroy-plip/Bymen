@@ -4,8 +4,14 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../routes';
 import { Client } from '../data/clients';
-import { listProductsForClient, listClients, listMeasurements, MedicaoRow, BancadaRow } from '../services/api';
-import { PRODUTOS_BANCADA } from '../data/products';
+import {
+  listProductsForClient,
+  listBancadaProductsForConsignado,
+  listClients,
+  listMeasurements,
+  MedicaoRow,
+  BancadaRow,
+} from '../services/api';
 import ProductRow, { Product } from '../components/ProductRow';
 import BancadaRowComponent from '../components/BancadaRow';
 import Button from '../components/Button';
@@ -37,6 +43,7 @@ export default function CriarMedicaoScreen({ navigation, route }: Props) {
   const clientId = route.params?.clientId;
   const [client, setClient] = useState<Client | undefined>(undefined);
   const [products, setProducts] = useState<Product[]>([]);
+  const [bancadaCatalog, setBancadaCatalog] = useState<Product[]>([]);
   const [loading, setLoading] = useState(false);
   const [averageSalesByProduct, setAverageSalesByProduct] = useState<Record<string, number>>({});
 
@@ -117,13 +124,18 @@ export default function CriarMedicaoScreen({ navigation, route }: Props) {
       setLoading(true);
 
       try {
-        const p = await listProductsForClient(c.id);
+        const [p, bancadaCatalogProducts] = await Promise.all([
+          listProductsForClient(c.id),
+          listBancadaProductsForConsignado(),
+        ]);
         if (!isActive) return;
 
         const sortedProducts = sortByCatalogOrder(
           p.filter((prod) => !shouldExcludeFromMedicao(prod.nome)),
         );
+        const sortedBancadaCatalog = sortByCatalogOrder(bancadaCatalogProducts);
         setProducts(sortedProducts);
+        setBancadaCatalog(sortedBancadaCatalog);
 
         const medicaoInicial: Record<string, MedicaoRow> = {};
         sortedProducts.forEach((prod) => {
@@ -290,18 +302,18 @@ export default function CriarMedicaoScreen({ navigation, route }: Props) {
   );
 
   const bancadaProducts = useMemo(
-    () => sortByCatalogOrder(PRODUTOS_BANCADA.map((p) => ({ ...p, precoSugestao: p.precoSugestao ?? 0 }))),
-    [],
+    () => sortByCatalogOrder(bancadaCatalog.map((p) => ({ ...p, precoSugestao: p.precoSugestao ?? 0 }))),
+    [bancadaCatalog],
   );
 
   const bonusProducts = useMemo(
     () =>
-      sortByCatalogOrder(PRODUTOS_BANCADA.map((p) => ({
+      sortByCatalogOrder(bancadaCatalog.map((p) => ({
         ...p,
         id: `${p.id}-bonus`,
         precoSugestao: p.precoSugestao ?? 0,
       }))),
-    [],
+    [bancadaCatalog],
   );
 
   // ========================================

@@ -12,8 +12,6 @@ import { getCurrentUser, listClients, removeProductStock, removeStreetStockFromU
 import { formatCurrency, formatDateTime } from '../utils/format';
 import { generateSalePDF } from '../services/pdf';
 import { sharePdf } from '../services/whatsapp';
-import * as Sharing from 'expo-sharing';
-import { getGeneralSettings } from '../services/settings';
 import { createKeyboardFocusHandler } from '../utils/keyboardFocus';
 import { getUserAppRole } from '../services/access';
 
@@ -27,6 +25,14 @@ const PAYMENT_OPTIONS: Array<{ id: PaymentMethod; label: string }> = [
   { id: 'CARTAO', label: 'Cartao' },
   { id: 'BOLETO', label: 'Boleto' },
 ];
+
+const INSTALLMENT_RATE_BY_COUNT: Record<number, number> = {
+  2: 9.6,
+  3: 11.2,
+  4: 11.4,
+  5: 14.3,
+  6: 14.3,
+};
 
 function getSaleItemTierLabel(item: { faixaPrecoAplicada?: 'BASE' | 'QTD_5' | 'QTD_10' }) {
   if (item.faixaPrecoAplicada === 'QTD_10') return 'Faixa aplicada: 10+ unidades';
@@ -45,9 +51,9 @@ export default function FinalizarVendaScreen({ navigation, route }: Props) {
   const [observacoes, setObservacoes] = useState('');
   const [isCardInstallment, setIsCardInstallment] = useState(false);
   const [installments, setInstallments] = useState(2);
-  const [creditMonthlyInterestPercent, setCreditMonthlyInterestPercent] = useState(2.49);
   const [signatureDataUrl, setSignatureDataUrl] = useState<string | undefined>(undefined);
   const [pdfUri, setPdfUri] = useState<string | undefined>();
+  const [saleFinalizada, setSaleFinalizada] = useState(false);
   const hasSignature = Boolean(signatureDataUrl && signatureDataUrl.trim().length > 0);
 
   const PAYMENT_DISCOUNT_PERCENT = 5;
@@ -57,10 +63,19 @@ export default function FinalizarVendaScreen({ navigation, route }: Props) {
   }, [clientId]);
 
   useEffect(() => {
-    getGeneralSettings().then((settings) => {
-      setCreditMonthlyInterestPercent(Number(settings.creditInstallmentMonthlyInterestPercent || 2.49));
+    if (!saleFinalizada) return;
+
+    const unsubscribe = navigation.addListener('beforeRemove', (event) => {
+      if (event.data.action.type !== 'GO_BACK' && event.data.action.type !== 'POP') {
+        return;
+      }
+
+      event.preventDefault();
+      navigation.navigate('Dashboard');
     });
-  }, []);
+
+    return unsubscribe;
+  }, [navigation, saleFinalizada]);
 
   const produtosItems = useMemo(() => items.filter((item) => !item.id.startsWith('b')), [items]);
   const bancadaItems = useMemo(() => items.filter((item) => item.id.startsWith('b')), [items]);
@@ -120,10 +135,14 @@ export default function FinalizarVendaScreen({ navigation, route }: Props) {
 
   const creditInterestValue = useMemo(() => {
     if (paymentMethod !== 'CARTAO' || !isCardInstallment) return 0;
-    const monthlyRate = creditMonthlyInterestPercent / 100;
-    const factor = Math.pow(1 + monthlyRate, installments);
-    return totalWithDiscount * (factor - 1);
-  }, [paymentMethod, isCardInstallment, installments, totalWithDiscount, creditMonthlyInterestPercent]);
+    const installmentRatePercent = Number(INSTALLMENT_RATE_BY_COUNT[installments] || 0);
+    return totalWithDiscount * (installmentRatePercent / 100);
+  }, [paymentMethod, isCardInstallment, installments, totalWithDiscount]);
+
+  const appliedInstallmentRatePercent = useMemo(
+    () => Number(INSTALLMENT_RATE_BY_COUNT[installments] || 0),
+    [installments],
+  );
 
   const totalFinal = useMemo(() => {
     if (paymentMethod !== 'CARTAO' || !isCardInstallment) return totalWithDiscount;
@@ -140,50 +159,6 @@ export default function FinalizarVendaScreen({ navigation, route }: Props) {
     if (method !== 'CARTAO') {
       setIsCardInstallment(false);
       setInstallments(2);
-    }
-  }
-
-  async function handleSalvarPdf() {
-    if (!client) {
-      Alert.alert('Cliente não encontrado', 'Não foi possível gerar o PDF sem a barbearia definida.');
-      return;
-    }
-
-    if (!hasSignature) {
-      Alert.alert('Assinatura obrigatória', 'Coleta a assinatura do responsável antes de gerar o PDF.');
-      return;
-    }
-
-    try {
-      const uri = await generateSalePDF({
-        clientName: client.nome,
-        dateTime: formatDateTime(new Date()),
-        items,
-        subtotal,
-        total: totalFinal,
-        paymentMethod,
-        responsavelVenda,
-        observacoes,
-        pixDiscountPercent: hasFivePercentDiscount ? PAYMENT_DISCOUNT_PERCENT : 0,
-        pixDiscountValue: hasFivePercentDiscount ? paymentDiscountValue : 0,
-        isCreditInstallment: paymentMethod === 'CARTAO' ? isCardInstallment : false,
-        installmentCount: paymentMethod === 'CARTAO' && isCardInstallment ? installments : 1,
-        creditMonthlyInterestPercent: paymentMethod === 'CARTAO' && isCardInstallment ? creditMonthlyInterestPercent : 0,
-        creditInterestValue: paymentMethod === 'CARTAO' && isCardInstallment ? creditInterestValue : 0,
-        signatureDataUrl,
-      });
-      setPdfUri(uri);
-
-      if (await Sharing.isAvailableAsync()) {
-        await Sharing.shareAsync(uri, {
-          mimeType: 'application/pdf',
-          dialogTitle: 'Salvar PDF da venda',
-        });
-      } else {
-        Alert.alert('PDF gerado', 'Não foi possível abrir o menu de salvar neste dispositivo.');
-      }
-    } catch (error) {
-      Alert.alert('Falha ao gerar PDF', (error as Error)?.message || 'Não foi possível gerar o PDF da venda.');
     }
   }
 
@@ -212,7 +187,7 @@ export default function FinalizarVendaScreen({ navigation, route }: Props) {
         pixDiscountValue: hasFivePercentDiscount ? paymentDiscountValue : 0,
         isCreditInstallment: paymentMethod === 'CARTAO' ? isCardInstallment : false,
         installmentCount: paymentMethod === 'CARTAO' && isCardInstallment ? installments : 1,
-        creditMonthlyInterestPercent: paymentMethod === 'CARTAO' && isCardInstallment ? creditMonthlyInterestPercent : 0,
+        creditMonthlyInterestPercent: paymentMethod === 'CARTAO' && isCardInstallment ? appliedInstallmentRatePercent : 0,
         creditInterestValue: paymentMethod === 'CARTAO' && isCardInstallment ? creditInterestValue : 0,
         signatureDataUrl,
       }));
@@ -224,6 +199,11 @@ export default function FinalizarVendaScreen({ navigation, route }: Props) {
   }
 
   async function handleConfirmarVenda() {
+        if (saleFinalizada) {
+          Alert.alert('Venda já finalizada', 'Esta venda já foi finalizada. Use voltar para retornar ao início.');
+          return;
+        }
+
     if (!client) {
       Alert.alert('Cliente não encontrado', 'Não foi possível identificar a barbearia desta venda.');
       return;
@@ -277,7 +257,7 @@ export default function FinalizarVendaScreen({ navigation, route }: Props) {
         paymentMethod,
         isCreditInstallment: paymentMethod === 'CARTAO' ? isCardInstallment : false,
         installmentCount: paymentMethod === 'CARTAO' && isCardInstallment ? installments : 1,
-        creditMonthlyInterestPercent: paymentMethod === 'CARTAO' && isCardInstallment ? creditMonthlyInterestPercent : 0,
+        creditMonthlyInterestPercent: paymentMethod === 'CARTAO' && isCardInstallment ? appliedInstallmentRatePercent : 0,
         creditInterestValue: paymentMethod === 'CARTAO' && isCardInstallment ? creditInterestValue : 0,
         responsavel: responsavelVenda,
         sellerEmail: currentUser?.email,
@@ -291,9 +271,9 @@ export default function FinalizarVendaScreen({ navigation, route }: Props) {
       Alert.alert('Venda registrada', 'Venda finalizada e estoque atualizado com sucesso.', [
         {
           text: 'OK',
-          onPress: () => navigation.replace('Dashboard'),
         },
       ]);
+      setSaleFinalizada(true);
     } catch (error) {
       Alert.alert('Falha ao finalizar venda', (error as Error)?.message || 'Não foi possível concluir a venda.');
     } finally {
@@ -438,7 +418,7 @@ export default function FinalizarVendaScreen({ navigation, route }: Props) {
                 <>
                   <Text style={{ color: '#111827', fontWeight: '700', marginTop: 12, marginBottom: 8 }}>Quantidade de parcelas</Text>
                   <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-                    {Array.from({ length: 11 }, (_, i) => i + 2).map((n) => (
+                    {Array.from({ length: 5 }, (_, i) => i + 2).map((n) => (
                       <TouchableOpacity
                         key={n}
                         onPress={() => setInstallments(n)}
@@ -458,7 +438,7 @@ export default function FinalizarVendaScreen({ navigation, route }: Props) {
 
                   <View style={{ marginTop: 10, backgroundColor: '#EFF6FF', borderRadius: 8, padding: 10, borderWidth: 1, borderColor: '#BFDBFE' }}>
                     <Text style={{ color: '#1D4ED8', fontWeight: '700', marginBottom: 4 }}>Simulação de parcelamento</Text>
-                    <Text style={{ color: '#1F2937' }}>Juros mensal: {creditMonthlyInterestPercent.toFixed(2).replace('.', ',')}%</Text>
+                    <Text style={{ color: '#1F2937' }}>Taxa da parcela ({installments}x): {appliedInstallmentRatePercent.toFixed(2).replace('.', ',')}%</Text>
                     <Text style={{ color: '#1F2937' }}>Parcela: {installments}x de {formatCurrency(installmentValue)}</Text>
                     <Text style={{ color: '#1F2937' }}>Acréscimo total: {formatCurrency(creditInterestValue)}</Text>
                     <Text style={{ color: '#1D4ED8', fontWeight: '700' }}>Total com juros: {formatCurrency(totalFinal)}</Text>
@@ -520,15 +500,13 @@ export default function FinalizarVendaScreen({ navigation, route }: Props) {
         </Card>
 
         <Button
-          title={isSaving ? 'Finalizando...' : 'Confirmar venda'}
+          title={saleFinalizada ? 'Venda finalizada' : isSaving ? 'Finalizando...' : 'Confirmar venda'}
           onPress={handleConfirmarVenda}
-          disabled={isSaving || !hasSignature}
+          disabled={isSaving || !hasSignature || saleFinalizada}
         />
         <View style={{ height: 12 }} />
-        <Button title="Salvar PDF" onPress={handleSalvarPdf} variant="secondary" disabled={!hasSignature} />
-        <View style={{ height: 12 }} />
         <Button
-          title="Salvar e enviar via WhatsApp"
+          title="Enviar via WhatsApp"
           onPress={handleSalvarEEnviarWhatsApp}
           variant="secondary"
           disabled={!hasSignature}

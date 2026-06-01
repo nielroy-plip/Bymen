@@ -75,46 +75,62 @@ export default function RelatorioEstoqueRuaScreen() {
       });
       setProductNameById(productLookup);
 
-      if (gestor && userEmail) {
-        const managedUsers = await listUsersForManagement(userEmail);
-        const eligibleUsers = managedUsers.filter((item) => {
-          const role = String(item.role || '').trim().toUpperCase();
-          return role === 'VENDEDOR' || role === 'SUPERVISOR';
-        });
-
-        setUsers(eligibleUsers);
-        setStockByUser(allStreetStock);
-        setMovements(allMovements.slice(0, 200));
-        setIsGestor(true);
-
-        setSelectedUserFilter((prev) => {
-          if (prev === '__ALL__') return prev;
-          if (eligibleUsers.some((item) => String(item.email || '').trim().toLowerCase() === prev)) {
-            return prev;
-          }
-          return '__ALL__';
-        });
-      } else {
-        setUsers([
-          {
-            email: userEmail,
-            role: appRole,
-            username: currentUser?.username || currentUser?.email,
-          },
-        ]);
-
-        setStockByUser({
-          [userEmail]: allStreetStock[userEmail] || {},
-        });
-
-        setMovements(
-          allMovements
-            .filter((item) => String(item.userEmail || '').trim().toLowerCase() === userEmail)
-            .slice(0, 100),
-        );
-        setIsGestor(false);
-        setSelectedUserFilter(userEmail);
+      let managedUsers: ManagedUser[] = [];
+      if (userEmail) {
+        try {
+          managedUsers = await listUsersForManagement(userEmail);
+        } catch {
+          managedUsers = [];
+        }
       }
+
+      const eligibleManaged = managedUsers.filter((item) => {
+        const role = String(item.role || '').trim().toUpperCase();
+        return role === 'VENDEDOR' || role === 'SUPERVISOR';
+      });
+
+      const managedByEmail = new Map(
+        eligibleManaged.map((item) => [String(item.email || '').trim().toLowerCase(), item]),
+      );
+
+      const stockEmails = Object.keys(allStreetStock || {}).map((item) => String(item || '').trim().toLowerCase());
+      const movementEmails = (allMovements || []).map((item) => String(item.userEmail || '').trim().toLowerCase());
+      const managedEmails = eligibleManaged.map((item) => String(item.email || '').trim().toLowerCase());
+
+      const userEmailSet = new Set<string>([...stockEmails, ...movementEmails, ...managedEmails]);
+      if (userEmail) userEmailSet.add(userEmail);
+
+      const consolidatedUsers: ManagedUser[] = Array.from(userEmailSet)
+        .filter((email) => email.length > 0)
+        .map((email) => {
+          const managed = managedByEmail.get(email);
+          if (managed) {
+            return managed;
+          }
+
+          return {
+            email,
+            role: email === userEmail ? appRole : 'VENDEDOR',
+            username:
+              email === userEmail
+                ? currentUser?.username || currentUser?.email || email
+                : email,
+          };
+        })
+        .sort((a, b) => String(a.username || a.email).localeCompare(String(b.username || b.email), 'pt-BR'));
+
+      setUsers(consolidatedUsers);
+      setStockByUser(allStreetStock);
+      setMovements(allMovements.slice(0, 400));
+      setIsGestor(gestor);
+
+      setSelectedUserFilter((prev) => {
+        if (prev === '__ALL__') return prev;
+        if (consolidatedUsers.some((item) => String(item.email || '').trim().toLowerCase() === prev)) {
+          return prev;
+        }
+        return '__ALL__';
+      });
     } finally {
       setLoading(false);
     }
@@ -185,7 +201,7 @@ export default function RelatorioEstoqueRuaScreen() {
         <Text style={{ color: '#6B7280', marginBottom: 14 }}>
           {isGestor
             ? 'Visão consolidada por vendedor/supervisor com saldo atual e histórico de movimentações.'
-            : 'Seu saldo atual no estoque na rua e histórico das suas movimentações.'}
+            : 'Visualização compartilhada do estoque na rua da equipe, com saldo atual e histórico de movimentações.'}
         </Text>
 
         <View style={{ marginBottom: 10 }}>
@@ -213,7 +229,7 @@ export default function RelatorioEstoqueRuaScreen() {
           </View>
         </View>
 
-        {isGestor && users.length > 0 && (
+        {users.length > 0 && (
           <View style={{ marginBottom: 14 }}>
             <Text style={{ color: '#111827', fontWeight: '700', marginBottom: 8 }}>Usuário</Text>
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>

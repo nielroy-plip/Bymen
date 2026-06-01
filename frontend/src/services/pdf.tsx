@@ -362,11 +362,11 @@ export async function generateMeasurementPDF(params: {
             <span style="font-weight:600">${installmentCount}x</span>
           </div>
           <div style="display:flex;justify-content:space-between;margin-bottom:8px">
-            <span style="color:#1D4ED8">Juros mensal:</span>
+            <span style="color:#1D4ED8">Taxa da parcela:</span>
             <span style="font-weight:600">${creditMonthlyInterestPercent.toFixed(2).replace('.', ',')}%</span>
           </div>
           <div style="display:flex;justify-content:space-between;margin-bottom:8px">
-            <span style="color:#1D4ED8">Acréscimo de juros:</span>
+            <span style="color:#1D4ED8">Acréscimo da taxa:</span>
             <span style="font-weight:600">+${formatCurrency(creditInterestValue)}</span>
           </div>
           <div style="display:flex;justify-content:space-between;margin-bottom:16px">
@@ -693,8 +693,8 @@ export async function generateSalePDF(params: {
           <p style="margin:0 0 8px 0"><strong>Faixas aplicadas:</strong> Base ${tierSummary.base} un • 5-9 un ${tierSummary.qtd5} un • 10+ un ${tierSummary.qtd10} un</p>
           ${hasFivePercentDiscountOnSale ? `<p style="margin:0 0 8px 0;color:#059669"><strong>Desconto ${saleDiscountLabel} (${pixPercent.toFixed(2).replace('.', ',')}%):</strong> -${formatCurrency(pixDiscount)}</p>` : ''}
           ${isCardInstallment ? `<p style="margin:0 0 8px 0;color:#1D4ED8"><strong>Parcelamento:</strong> ${installmentCount}x</p>` : ''}
-          ${isCardInstallment ? `<p style="margin:0 0 8px 0;color:#1D4ED8"><strong>Juros mensal:</strong> ${creditMonthlyInterestPercent.toFixed(2).replace('.', ',')}%</p>` : ''}
-          ${isCardInstallment ? `<p style="margin:0 0 8px 0;color:#1D4ED8"><strong>Acréscimo de juros:</strong> +${formatCurrency(creditInterestValue)}</p>` : ''}
+          ${isCardInstallment ? `<p style="margin:0 0 8px 0;color:#1D4ED8"><strong>Taxa da parcela:</strong> ${creditMonthlyInterestPercent.toFixed(2).replace('.', ',')}%</p>` : ''}
+          ${isCardInstallment ? `<p style="margin:0 0 8px 0;color:#1D4ED8"><strong>Acréscimo da taxa:</strong> +${formatCurrency(creditInterestValue)}</p>` : ''}
           ${isCardInstallment ? `<p style="margin:0 0 8px 0;color:#1D4ED8"><strong>Simulação:</strong> ${installmentCount}x de ${formatCurrency(installmentValue)}</p>` : ''}
           <p style="margin:0;font-size:20px;font-weight:700;color:#111827"><strong>Total:</strong> ${formatCurrency(params.total)}</p>
         </div>
