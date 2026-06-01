@@ -51,6 +51,33 @@ let HomologService = class HomologService {
     constructor(prisma) {
         this.prisma = prisma;
     }
+    normalizeRole(rawRole) {
+        const normalized = String(rawRole || '').trim().toLowerCase();
+        if (normalized === 'gestor' ||
+            normalized === 'admin' ||
+            normalized === 'administrador' ||
+            normalized === 'manager') {
+            return 'GESTOR';
+        }
+        if (normalized === 'supervisor' ||
+            normalized === 'coordenador' ||
+            normalized === 'coodenador' ||
+            normalized === 'coordinator') {
+            return 'SUPERVISOR';
+        }
+        return 'VENDEDOR';
+    }
+    async ensureGestor(actorEmail) {
+        const normalizedActorEmail = String(actorEmail || '').trim().toLowerCase();
+        if (!normalizedActorEmail) {
+            throw new common_1.UnauthorizedException('Apenas o perfil Gestor pode realizar esta ação');
+        }
+        const actor = await this.prisma.user.findUnique({ where: { email: normalizedActorEmail } });
+        if (!actor || this.normalizeRole(actor.role) !== 'GESTOR') {
+            throw new common_1.UnauthorizedException('Apenas o perfil Gestor pode realizar esta ação');
+        }
+        return actor;
+    }
     async registerUser(dto) {
         const email = dto.email.trim().toLowerCase();
         const username = (dto.username || '').trim().toLowerCase();
@@ -72,7 +99,7 @@ let HomologService = class HomologService {
                 username,
                 phone: dto.phone?.trim() || null,
                 passwordHash,
-                role: dto.role?.trim() || 'USER',
+                role: this.normalizeRole(dto.role),
             },
             select: {
                 id: true,
@@ -118,7 +145,7 @@ let HomologService = class HomologService {
             email: user.email,
             username: user.username,
             phone: user.phone,
-            role: user.role,
+            role: this.normalizeRole(user.role),
         };
     }
     async updateUserProfile(dto) {
@@ -149,6 +176,62 @@ let HomologService = class HomologService {
             },
         });
         return updated;
+    }
+    async listUsers(actorEmail) {
+        await this.ensureGestor(actorEmail);
+        const users = await this.prisma.user.findMany({
+            orderBy: { createdAt: 'desc' },
+            select: {
+                id: true,
+                email: true,
+                username: true,
+                phone: true,
+                role: true,
+                createdAt: true,
+                updatedAt: true,
+            },
+        });
+        return users.map((user) => ({
+            ...user,
+            role: this.normalizeRole(user.role),
+        }));
+    }
+    async updateUserRole(dto) {
+        const actorEmail = dto.actorEmail.trim().toLowerCase();
+        const targetEmail = dto.targetEmail.trim().toLowerCase();
+        const normalizedRole = this.normalizeRole(dto.role);
+        await this.ensureGestor(actorEmail);
+        const targetUser = await this.prisma.user.findUnique({ where: { email: targetEmail } });
+        if (!targetUser) {
+            throw new common_1.NotFoundException('Usuário alvo não encontrado');
+        }
+        const updatedUser = await this.prisma.user.update({
+            where: { id: targetUser.id },
+            data: { role: normalizedRole },
+            select: {
+                id: true,
+                email: true,
+                username: true,
+                phone: true,
+                role: true,
+                updatedAt: true,
+            },
+        });
+        await this.prisma.auditLog.create({
+            data: {
+                action: 'USER_ROLE_UPDATED',
+                userId: actorEmail,
+                details: JSON.stringify({
+                    actorEmail,
+                    targetEmail,
+                    role: normalizedRole,
+                }),
+            },
+        });
+        return {
+            ...updatedUser,
+            role: this.normalizeRole(updatedUser.role),
+        };
     }
     async changePassword(dto) {
         const email = dto.email.trim().toLowerCase();

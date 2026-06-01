@@ -23,6 +23,37 @@ let BlingController = class BlingController {
     health() {
         return this.blingService.healthCheck();
     }
+    getAuthorizeUrl(state) {
+        return this.blingService.getAuthorizeUrl(state);
+    }
+    exchangeToken(body) {
+        return this.blingService.exchangeAuthorizationCode(body.code);
+    }
+    async oauthCallback(code, state, autoToken) {
+        if (!code) {
+            return {
+                ok: false,
+                message: 'Código de autorização não recebido no callback.',
+                state,
+            };
+        }
+        const shouldExchange = String(autoToken || '').toLowerCase() === 'true';
+        if (!shouldExchange) {
+            return {
+                ok: true,
+                message: 'Code recebido com sucesso. Envie este code para /oauth/token para trocar pelos tokens.',
+                code,
+                state,
+            };
+        }
+        const tokenResponse = await this.blingService.exchangeAuthorizationCode(code);
+        return {
+            ok: true,
+            message: 'Code recebido e trocado por tokens com sucesso.',
+            state,
+            tokenResponse,
+        };
+    }
     syncClient(dto) {
         return this.blingService.syncClient(dto);
     }
@@ -38,6 +69,24 @@ let BlingController = class BlingController {
     finalizeVenda(vendaId, dto) {
         return this.blingService.finalizeVenda({ ...dto, vendaId });
     }
+    receiveWebhook(payload, authorization, webhookToken, blingTopic) {
+        return this.blingService.receiveWebhook({
+            payload,
+            topicHint: blingTopic,
+            authorization,
+            webhookToken,
+            endpoint: '/integrations/bling/webhooks',
+        });
+    }
+    receiveWebhookByTopic(topic, payload, authorization, webhookToken) {
+        return this.blingService.receiveWebhook({
+            payload,
+            topicHint: topic,
+            authorization,
+            webhookToken,
+            endpoint: `/integrations/bling/webhooks/${topic}`,
+        });
+    }
 };
 exports.BlingController = BlingController;
 __decorate([
@@ -46,6 +95,29 @@ __decorate([
     __metadata("design:paramtypes", []),
     __metadata("design:returntype", void 0)
 ], BlingController.prototype, "health", null);
+__decorate([
+    (0, common_1.Get)('oauth/authorize-url'),
+    __param(0, (0, common_1.Query)('state')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String]),
+    __metadata("design:returntype", void 0)
+], BlingController.prototype, "getAuthorizeUrl", null);
+__decorate([
+    (0, common_1.Post)('oauth/token'),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", void 0)
+], BlingController.prototype, "exchangeToken", null);
+__decorate([
+    (0, common_1.Get)('oauth/callback'),
+    __param(0, (0, common_1.Query)('code')),
+    __param(1, (0, common_1.Query)('state')),
+    __param(2, (0, common_1.Query)('autoToken')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, String, String]),
+    __metadata("design:returntype", Promise)
+], BlingController.prototype, "oauthCallback", null);
 __decorate([
     (0, common_1.Post)('clients/sync'),
     __param(0, (0, common_1.Body)()),
@@ -83,6 +155,26 @@ __decorate([
     __metadata("design:paramtypes", [String, Object]),
     __metadata("design:returntype", void 0)
 ], BlingController.prototype, "finalizeVenda", null);
+__decorate([
+    (0, common_1.Post)('webhooks'),
+    __param(0, (0, common_1.Body)()),
+    __param(1, (0, common_1.Headers)('authorization')),
+    __param(2, (0, common_1.Headers)('x-webhook-token')),
+    __param(3, (0, common_1.Headers)('x-bling-topic')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, String, String, String]),
+    __metadata("design:returntype", void 0)
+], BlingController.prototype, "receiveWebhook", null);
+__decorate([
+    (0, common_1.Post)('webhooks/:topic'),
+    __param(0, (0, common_1.Param)('topic')),
+    __param(1, (0, common_1.Body)()),
+    __param(2, (0, common_1.Headers)('authorization')),
+    __param(3, (0, common_1.Headers)('x-webhook-token')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, Object, String, String]),
+    __metadata("design:returntype", void 0)
+], BlingController.prototype, "receiveWebhookByTopic", null);
 exports.BlingController = BlingController = __decorate([
     (0, common_1.Controller)('integrations/bling'),
     __metadata("design:paramtypes", [bling_service_1.BlingService])

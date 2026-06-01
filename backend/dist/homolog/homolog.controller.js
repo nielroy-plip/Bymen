@@ -22,6 +22,7 @@ const save_measurement_dto_1 = require("./dto/save-measurement.dto");
 const stock_movement_dto_1 = require("./dto/stock-movement.dto");
 const change_password_dto_1 = require("./dto/change-password.dto");
 const update_user_profile_dto_1 = require("./dto/update-user-profile.dto");
+const update_user_role_dto_1 = require("./dto/update-user-role.dto");
 let HomologController = class HomologController {
     constructor(homologService) {
         this.homologService = homologService;
@@ -37,6 +38,12 @@ let HomologController = class HomologController {
     }
     updateProfile(dto) {
         return this.homologService.updateUserProfile(dto);
+    }
+    listUsers(actorEmail) {
+        return this.homologService.listUsers(actorEmail);
+    }
+    updateUserRole(dto) {
+        return this.homologService.updateUserRole(dto);
     }
     upsertClient(dto) {
         return this.homologService.upsertClient(dto);
@@ -95,6 +102,20 @@ __decorate([
     __metadata("design:paramtypes", [update_user_profile_dto_1.UpdateUserProfileDto]),
     __metadata("design:returntype", void 0)
 ], HomologController.prototype, "updateProfile", null);
+__decorate([
+    (0, common_1.Get)('users'),
+    __param(0, (0, common_1.Query)('actorEmail')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String]),
+    __metadata("design:returntype", void 0)
+], HomologController.prototype, "listUsers", null);
+__decorate([
+    (0, common_1.Post)('users/role/update'),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [update_user_role_dto_1.UpdateUserRoleDto]),
+    __metadata("design:returntype", void 0)
+], HomologController.prototype, "updateUserRole", null);
 __decorate([
     (0, common_1.Post)('clients/upsert'),
     __param(0, (0, common_1.Body)()),
