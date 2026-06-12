@@ -38,6 +38,8 @@ import {
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Estoque'>;
 
+const HIDDEN_IN_ESTOQUE_BANCADA_IDS = new Set(['b5', 'b6', 'b7', 'b8', 'b10', 'b11', 'b13', 'b14', 'b15']);
+
 export default function EstoqueScreen({ navigation }: Props) {
   const scrollRef = useRef<ScrollView>(null);
   const keyboardHeightRef = useRef(0);
@@ -84,7 +86,10 @@ export default function EstoqueScreen({ navigation }: Props) {
     [criticalItems]
   );
   const criticalBancada = useMemo(
-    () => criticalItems.filter((item) => item.id.startsWith('b')),
+    () =>
+      criticalItems.filter(
+        (item) => item.id.startsWith('b') && !HIDDEN_IN_ESTOQUE_BANCADA_IDS.has(item.id),
+      ),
     [criticalItems]
   );
   useEffect(() => {
@@ -840,7 +845,9 @@ export default function EstoqueScreen({ navigation }: Props) {
           ))
         )}
         {activeTab === 'bancada' && (
-          products.filter(p => p.id.startsWith('b')).map((p) => (
+          products
+            .filter((p) => p.id.startsWith('b') && !HIDDEN_IN_ESTOQUE_BANCADA_IDS.has(p.id))
+            .map((p) => (
             <View key={p.id} style={{ marginBottom: 16 }}>
               <Card>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>

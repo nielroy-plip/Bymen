@@ -198,6 +198,27 @@ const STOCK_REMOTE_REFRESH_INTERVAL_MS = 15000;
 let lastStockRemoteFetchAt = 0;
 let stockRemoteBlockedUntil = 0;
 
+const MIRRORED_BANCADA_STOCK_MAP: Record<string, string> = {
+  b5: 'p9',
+  b6: 'p10',
+  b7: 'p12',
+  b8: 'p11',
+  b10: 'p7',
+  b11: 'p8',
+  b13: 'p16',
+  b14: 'p15',
+  b15: 'p14',
+};
+
+function resolveStockProductId(productId: string): string {
+  return MIRRORED_BANCADA_STOCK_MAP[productId] || productId;
+}
+
+function getStockValueForProduct(stock: Record<string, number>, productId: string): number {
+  const resolvedId = resolveStockProductId(productId);
+  return Number(stock[resolvedId] ?? stock[productId] ?? 0);
+}
+
 function formatCpfCnpj(value: string) {
   const digits = String(value || '').replace(/\D/g, '').slice(0, 14);
 
@@ -879,7 +900,7 @@ export async function listProducts() {
   if (isInRefreshWindow || isRemoteBlocked) {
     return allProducts.map((p) => ({
       ...p,
-      estoque: localStock[p.id] ?? 0,
+      estoque: getStockValueForProduct(localStock, p.id),
     }));
   }
 
@@ -891,7 +912,7 @@ export async function listProducts() {
 
     return allProducts.map((p) => ({
       ...p,
-      estoque: remoteBalances[p.id] ?? localStock[p.id] ?? 0,
+      estoque: getStockValueForProduct({ ...localStock, ...remoteBalances }, p.id),
     }));
   } catch (error) {
     const message = String((error as Error)?.message || '').toLowerCase();
@@ -904,7 +925,7 @@ export async function listProducts() {
       stockRemoteBlockedUntil = now + 60000;
     }
 
-    return allProducts.map(p => ({ ...p, estoque: localStock[p.id] ?? 0 }));
+    return allProducts.map((p) => ({ ...p, estoque: getStockValueForProduct(localStock, p.id) }));
   }
 }
 
@@ -967,7 +988,7 @@ export async function listProductsForStreetUser(userEmail: string) {
 
   return allProducts.map((p) => ({
     ...p,
-    estoque: Number(streetStock[p.id] ?? 0),
+    estoque: getStockValueForProduct(streetStock, p.id),
   }));
 }
 
@@ -1100,17 +1121,19 @@ export async function deleteProduct(productId: string): Promise<void> {
 }
 
 async function getCurrentDistributorBalance(productId: string, localStock: Record<string, number>) {
-  if (typeof localStock[productId] === 'number') {
-    return localStock[productId];
+  const resolvedId = resolveStockProductId(productId);
+
+  if (typeof localStock[resolvedId] === 'number') {
+    return localStock[resolvedId];
   }
 
   try {
     const remoteBalances = await homologRequest<Record<string, number>>('/homolog/stock/balances');
     const merged = { ...localStock, ...remoteBalances };
     await writeStock(merged);
-    return remoteBalances[productId] ?? merged[productId] ?? 0;
+    return remoteBalances[resolvedId] ?? merged[resolvedId] ?? remoteBalances[productId] ?? merged[productId] ?? 0;
   } catch {
-    return localStock[productId] ?? 0;
+    return localStock[resolvedId] ?? localStock[productId] ?? 0;
   }
 }
 
@@ -1141,23 +1164,24 @@ export async function addClientInitialStock(
 export async function addProductStock(productId: string, quantity: number) {
   const stock = await readStock();
   const allProducts = await getAllProducts();
+  const stockProductId = resolveStockProductId(productId);
   const current = await getCurrentDistributorBalance(productId, stock);
-  stock[productId] = current + quantity;
+  stock[stockProductId] = current + quantity;
   await writeStock(stock);
 
-  const product = allProducts.find((p) => p.id === productId);
+  const product = allProducts.find((p) => p.id === stockProductId) || allProducts.find((p) => p.id === productId);
   await homologRequest('/homolog/stock/movement', {
     method: 'POST',
     body: JSON.stringify({
-      productId,
+      productId: stockProductId,
       quantity,
       type: 'ENTRADA',
       unitPrice: product?.preco || 0,
       suggestedPrice: product?.precoSugestao || product?.preco || 0,
-      productName: product?.nome || productId,
+      productName: product?.nome || stockProductId,
       productLine: product?.linha || 'Bymen',
       productCapacity: String(product?.cap ?? ''),
-      productType: productId.startsWith('b') ? 'BANCADA' : 'PRODUTO',
+      productType: stockProductId.startsWith('b') ? 'BANCADA' : 'PRODUTO',
     }),
   });
 }
@@ -1165,24 +1189,25 @@ export async function addProductStock(productId: string, quantity: number) {
 export async function removeProductStock(productId: string, quantity: number): Promise<boolean> {
   const stock = await readStock();
   const allProducts = await getAllProducts();
+  const stockProductId = resolveStockProductId(productId);
   const current = await getCurrentDistributorBalance(productId, stock);
   if (current >= quantity) {
-    stock[productId] = current - quantity;
+    stock[stockProductId] = current - quantity;
     await writeStock(stock);
 
-    const product = allProducts.find((p) => p.id === productId);
+    const product = allProducts.find((p) => p.id === stockProductId) || allProducts.find((p) => p.id === productId);
     await homologRequest('/homolog/stock/movement', {
       method: 'POST',
       body: JSON.stringify({
-        productId,
+        productId: stockProductId,
         quantity,
         type: 'SAIDA',
         unitPrice: product?.preco || 0,
         suggestedPrice: product?.precoSugestao || product?.preco || 0,
-        productName: product?.nome || productId,
+        productName: product?.nome || stockProductId,
         productLine: product?.linha || 'Bymen',
         productCapacity: String(product?.cap ?? ''),
-        productType: productId.startsWith('b') ? 'BANCADA' : 'PRODUTO',
+        productType: stockProductId.startsWith('b') ? 'BANCADA' : 'PRODUTO',
       }),
     });
     return true;
@@ -1197,24 +1222,25 @@ export async function transferDistributorStockToUser(
 ): Promise<boolean> {
   const normalizedEmail = normalizeUserStockEmail(userEmail);
   const qty = Number(quantity || 0);
+  const stockProductId = resolveStockProductId(productId);
 
   if (!normalizedEmail || !Number.isFinite(qty) || qty <= 0) {
     return false;
   }
 
-  const removedFromDistributor = await removeProductStock(productId, qty);
+  const removedFromDistributor = await removeProductStock(stockProductId, qty);
   if (!removedFromDistributor) {
     return false;
   }
 
   const stockByUser = await readUserStreetStock();
   const current = { ...(stockByUser[normalizedEmail] || {}) };
-  current[productId] = Number(current[productId] || 0) + qty;
+  current[stockProductId] = Number(current[stockProductId] || 0) + qty;
   stockByUser[normalizedEmail] = current;
   await writeUserStreetStock(stockByUser);
   await appendStreetStockMovement({
     userEmail: normalizedEmail,
-    productId,
+    productId: stockProductId,
     quantity: qty,
     type: 'TRANSFER_DISTRIBUTOR_TO_USER',
   });
@@ -1229,6 +1255,7 @@ export async function removeStreetStockFromUser(
 ): Promise<boolean> {
   const normalizedEmail = normalizeUserStockEmail(userEmail);
   const qty = Number(quantity || 0);
+  const stockProductId = resolveStockProductId(productId);
 
   if (!normalizedEmail || !Number.isFinite(qty) || qty <= 0) {
     return false;
@@ -1236,7 +1263,7 @@ export async function removeStreetStockFromUser(
 
   const stockByUser = await readUserStreetStock();
   const current = { ...(stockByUser[normalizedEmail] || {}) };
-  const available = Number(current[productId] || 0);
+  const available = Number(current[stockProductId] || 0);
 
   if (available < qty) {
     return false;
@@ -1244,16 +1271,16 @@ export async function removeStreetStockFromUser(
 
   const nextQty = available - qty;
   if (nextQty <= 0) {
-    delete current[productId];
+    delete current[stockProductId];
   } else {
-    current[productId] = nextQty;
+    current[stockProductId] = nextQty;
   }
 
   stockByUser[normalizedEmail] = current;
   await writeUserStreetStock(stockByUser);
   await appendStreetStockMovement({
     userEmail: normalizedEmail,
-    productId,
+    productId: stockProductId,
     quantity: qty,
     type: 'CONSUMPTION',
   });
@@ -1268,6 +1295,7 @@ export async function addStreetStockToUser(
 ): Promise<boolean> {
   const normalizedEmail = normalizeUserStockEmail(userEmail);
   const qty = Number(quantity || 0);
+  const stockProductId = resolveStockProductId(productId);
 
   if (!normalizedEmail || !Number.isFinite(qty) || qty <= 0) {
     return false;
@@ -1275,12 +1303,12 @@ export async function addStreetStockToUser(
 
   const stockByUser = await readUserStreetStock();
   const current = { ...(stockByUser[normalizedEmail] || {}) };
-  current[productId] = Number(current[productId] || 0) + qty;
+  current[stockProductId] = Number(current[stockProductId] || 0) + qty;
   stockByUser[normalizedEmail] = current;
   await writeUserStreetStock(stockByUser);
   await appendStreetStockMovement({
     userEmail: normalizedEmail,
-    productId,
+    productId: stockProductId,
     quantity: qty,
     type: 'RETURN_TO_USER',
   });

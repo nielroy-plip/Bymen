@@ -297,16 +297,18 @@ export default function ClienteDetalhesScreen({ navigation, route }: Props) {
             </>
           )}
         </Card>
-        <Button
-          title="Reposição extra"
-          onPress={() => navigation.navigate('EnviarEstoque', { clientId: client.id })}
-          variant="secondary"
-        />
-        <Button
-          title="Novo pedido"
-          onPress={() => navigation.navigate('Vendas', { clientId: client.id })}
-          style={{ marginTop: 10 }}
-        />
+        {client.operationMode === 'VENDA' ? (
+          <Button
+            title="Novo pedido"
+            onPress={() => navigation.navigate('Vendas', { clientId: client.id })}
+          />
+        ) : (
+          <Button
+            title="Reposição extra"
+            onPress={() => navigation.navigate('EnviarEstoque', { clientId: client.id })}
+            variant="secondary"
+          />
+        )}
       </ScrollView>
     </View>
   );
