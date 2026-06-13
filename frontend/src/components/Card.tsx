@@ -1,11 +1,12 @@
 import React, { ReactNode } from 'react';
-import { View } from 'react-native';
+import { View, ViewStyle } from 'react-native';
 
 type Props = {
   children: ReactNode;
+  style?: ViewStyle;
 };
 
-export default function Card({ children }: Props) {
+export default function Card({ children, style }: Props) {
   return (
     <View
       style={{
@@ -18,7 +19,8 @@ export default function Card({ children }: Props) {
         shadowColor: '#000000',
         shadowOpacity: 0.06,
         shadowRadius: 6,
-        elevation: 2
+        elevation: 2,
+        ...(style || {}),
       }}
     >
       {children}

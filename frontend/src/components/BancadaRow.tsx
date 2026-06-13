@@ -43,6 +43,38 @@ function parseNumber(v: string) {
   return Number.isFinite(n) ? n : 0;
 }
 
+function getLineTheme(line: string) {
+  const normalized = String(line || '').trim().toLowerCase();
+
+  if (normalized.includes('wood')) {
+    return {
+      backgroundColor: '#FEF7ED',
+      borderColor: '#D6B18B',
+      badgeBg: '#8B5E3C',
+      badgeText: '#FFFFFF',
+      subtitle: '#7C4A2D',
+    };
+  }
+
+  if (normalized.includes('ocean')) {
+    return {
+      backgroundColor: '#EFF6FF',
+      borderColor: '#93C5FD',
+      badgeBg: '#1D4ED8',
+      badgeText: '#FFFFFF',
+      subtitle: '#1E3A8A',
+    };
+  }
+
+  return {
+    backgroundColor: '#F9FAFB',
+    borderColor: '#E5E7EB',
+    badgeBg: '#374151',
+    badgeText: '#FFFFFF',
+    subtitle: '#4B5563',
+  };
+}
+
 function getPricingForQuantity(product: Product, quantity: number): { unitPrice: number; tier: PromoTier } {
   if (quantity >= 10 && typeof product.preco10 === 'number') {
     return { unitPrice: product.preco10, tier: 'QTD_10' };
@@ -62,6 +94,7 @@ function BancadaRowComponent({ product, onChange, hideValues = false }: Props & 
   const lastSyncKeyRef = useRef('');
   const { width } = Dimensions.get('window');
   const isTablet = width >= 768;
+  const lineTheme = getLineTheme(product.linha);
   const fontSize = {
     small: isTablet ? 14 : 12,
     base: isTablet ? 18 : 16,
@@ -130,9 +163,9 @@ function BancadaRowComponent({ product, onChange, hideValues = false }: Props & 
   return (
     <View
       style={{
-        backgroundColor: '#FFFFFF',
+        backgroundColor: lineTheme.backgroundColor,
         borderWidth: 1,
-        borderColor: '#E5E7EB',
+        borderColor: lineTheme.borderColor,
         borderRadius: isTablet ? 12 : 8,
         padding: isTablet ? 16 : 12,
         marginBottom: isTablet ? 12 : 8
@@ -143,8 +176,13 @@ function BancadaRowComponent({ product, onChange, hideValues = false }: Props & 
         <Text style={{ fontSize: fontSize.base, fontWeight: '700', color: '#111827' }}>
           {product.nome}
         </Text>
-        <Text style={{ fontSize: fontSize.small, color: '#6B7280', marginTop: 2 }}>
-          {product.linha} • {product.cap}{getProductUnit(product.nome)}
+        <View style={{ alignSelf: 'flex-start', marginTop: 6, marginBottom: 2, backgroundColor: lineTheme.badgeBg, borderRadius: 999, paddingVertical: 4, paddingHorizontal: 10 }}>
+          <Text style={{ color: lineTheme.badgeText, fontWeight: '700', fontSize: 13 }}>
+            LINHA {String(product.linha || '').toUpperCase()}
+          </Text>
+        </View>
+        <Text style={{ fontSize: fontSize.small, color: lineTheme.subtitle, marginTop: 2 }}>
+          {product.cap}{getProductUnit(product.nome)}
         </Text>
         {!hideValues && (
           <>

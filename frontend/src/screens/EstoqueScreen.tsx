@@ -38,7 +38,7 @@ import {
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Estoque'>;
 
-const HIDDEN_IN_ESTOQUE_BANCADA_IDS = new Set(['b5', 'b6', 'b7', 'b8', 'b10', 'b11', 'b13', 'b14', 'b15']);
+const HIDDEN_IN_ESTOQUE_BANCADA_IDS = new Set(['b5', 'b6', 'b7', 'b8', 'b9', 'b10', 'b11', 'b13', 'b14', 'b15']);
 
 export default function EstoqueScreen({ navigation }: Props) {
   const scrollRef = useRef<ScrollView>(null);

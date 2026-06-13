@@ -35,6 +35,44 @@ type StockProduct = {
 
 type PromoTier = 'BASE' | 'QTD_5' | 'QTD_10';
 
+function getLineCardTheme(line: string) {
+  const normalized = String(line || '').trim().toLowerCase();
+
+  if (normalized.includes('wood')) {
+    return {
+      cardStyle: {
+        backgroundColor: '#FEF7ED',
+        borderColor: '#D6B18B',
+      },
+      badgeBg: '#8B5E3C',
+      badgeText: '#FFFFFF',
+      subtitle: '#7C4A2D',
+    };
+  }
+
+  if (normalized.includes('ocean')) {
+    return {
+      cardStyle: {
+        backgroundColor: '#EFF6FF',
+        borderColor: '#93C5FD',
+      },
+      badgeBg: '#1D4ED8',
+      badgeText: '#FFFFFF',
+      subtitle: '#1E3A8A',
+    };
+  }
+
+  return {
+    cardStyle: {
+      backgroundColor: '#F9FAFB',
+      borderColor: '#E5E7EB',
+    },
+    badgeBg: '#374151',
+    badgeText: '#FFFFFF',
+    subtitle: '#4B5563',
+  };
+}
+
 const SALE_PRICE_OVERRIDES: Record<string, { preco: number; preco5?: number; preco10?: number }> = {
   // Linha venda
   p1: { preco: 39.9, preco5: 37.8, preco10: 35.7 },
@@ -255,15 +293,19 @@ export default function VendasScreen({ navigation, route }: Props) {
           </View>
 
           {displayedProducts.map((product) => (
-            <Card key={product.id}>
+            <Card key={product.id} style={getLineCardTheme(product.linha).cardStyle}>
               {(() => {
                 const quantidadeAtual = Number(quantities[product.id] || 0);
                 const { unitPrice: precoAtual } = getPricingForQuantity(product, quantidadeAtual);
+                const lineTheme = getLineCardTheme(product.linha);
                 return (
                   <>
               <Text style={{ fontSize: 16, fontWeight: '700', color: '#111827' }}>{product.nome}</Text>
+              <View style={{ alignSelf: 'flex-start', marginTop: 6, marginBottom: 2, backgroundColor: lineTheme.badgeBg, borderRadius: 999, paddingVertical: 4, paddingHorizontal: 10 }}>
+                <Text style={{ color: lineTheme.badgeText, fontWeight: '700', fontSize: 13 }}>LINHA {String(product.linha || '').toUpperCase()}</Text>
+              </View>
               <Text style={{ color: '#6B7280', marginTop: 4 }}>
-                {product.linha} • {product.cap}ml • Disponível: {product.estoque}
+                {product.cap}ml • Disponível: {product.estoque}
               </Text>
               <Text style={{ color: '#1F2937', marginTop: 4, fontWeight: '600' }}>
                 Preço base: {formatCurrency(product.preco)}
@@ -274,7 +316,7 @@ export default function VendasScreen({ navigation, route }: Props) {
                 </Text>
               )}
               {typeof product.precoSugestao === 'number' && (
-                <Text style={{ color: '#6B7280', marginTop: 2, fontSize: 12 }}>
+                <Text style={{ color: lineTheme.subtitle, marginTop: 2, fontSize: 12 }}>
                   Sugestão revenda: {formatCurrency(product.precoSugestao)}
                 </Text>
               )}

@@ -199,6 +199,7 @@ let lastStockRemoteFetchAt = 0;
 let stockRemoteBlockedUntil = 0;
 
 const MIRRORED_BANCADA_STOCK_MAP: Record<string, string> = {
+  b9: 'p13',
   b5: 'p9',
   b6: 'p10',
   b7: 'p12',
