@@ -15,11 +15,17 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
   }
 
   private logDatabaseTarget() {
-    const databaseUrl = process.env.DATABASE_URL;
+    let databaseUrl = process.env.DATABASE_URL;
 
     if (!databaseUrl) {
       this.logger.warn('DATABASE_URL não definida no runtime');
       return;
+    }
+
+    databaseUrl = String(databaseUrl).trim();
+    // Remove aspas simples/duplas acidentalmente incluídas na variável de ambiente
+    if ((databaseUrl.startsWith('"') && databaseUrl.endsWith('"')) || (databaseUrl.startsWith("'") && databaseUrl.endsWith("'"))) {
+      databaseUrl = databaseUrl.slice(1, -1);
     }
 
     try {
@@ -31,8 +37,13 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
       this.logger.log(
         `Conectando no banco host=${parsed.hostname} port=${parsed.port || 'default'} pooler=${usingPooler} sslmode=${sslMode} pgbouncer=${hasPgbouncer}`,
       );
-    } catch {
-      this.logger.warn('DATABASE_URL inválida (falha ao parsear URL)');
+    } catch (e) {
+      // Redige a senha antes de logar o valor bruto para evitar exposição de segredos
+      let redacted = databaseUrl;
+      try {
+        redacted = databaseUrl.replace(/:\/\/([^:@]+):([^@]+)@/, '://$1:***@');
+      } catch {}
+      this.logger.warn(`DATABASE_URL inválida (falha ao parsear URL). Valor aproximado: ${redacted}`);
     }
   }
 }
