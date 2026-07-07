@@ -43,14 +43,15 @@ function getSaleItemTierLabel(item: { faixaPrecoAplicada?: 'BASE' | 'QTD_5' | 'Q
 export default function FinalizarVendaScreen({ navigation, route }: Props) {
   const scrollRef = useRef<ScrollView>(null);
   const handleFieldFocus = createKeyboardFocusHandler(scrollRef, 24);
-  const { clientId, items } = route.params;
+  const { clientId, items, paymentMethod: routePaymentMethod, boletoDays: routeBoletoDays } = route.params;
   const [client, setClient] = useState<Client | undefined>();
   const [isSaving, setIsSaving] = useState(false);
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('PIX');
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>(routePaymentMethod ?? 'PIX');
   const [responsavelVenda, setResponsavelVenda] = useState('');
   const [observacoes, setObservacoes] = useState('');
   const [isCardInstallment, setIsCardInstallment] = useState(false);
   const [installments, setInstallments] = useState(2);
+  const [boletoDays, setBoletoDays] = useState<number | null>(routeBoletoDays ?? null);
   const [signatureDataUrl, setSignatureDataUrl] = useState<string | undefined>(undefined);
   const [pdfUri, setPdfUri] = useState<string | undefined>();
   const [saleFinalizada, setSaleFinalizada] = useState(false);
@@ -181,6 +182,7 @@ export default function FinalizarVendaScreen({ navigation, route }: Props) {
         subtotal,
         total: totalFinal,
         paymentMethod,
+        boletoDays,
         responsavelVenda,
         observacoes,
         pixDiscountPercent: hasFivePercentDiscount ? PAYMENT_DISCOUNT_PERCENT : 0,
@@ -260,6 +262,7 @@ export default function FinalizarVendaScreen({ navigation, route }: Props) {
         creditMonthlyInterestPercent: paymentMethod === 'CARTAO' && isCardInstallment ? appliedInstallmentRatePercent : 0,
         creditInterestValue: paymentMethod === 'CARTAO' && isCardInstallment ? creditInterestValue : 0,
         responsavel: responsavelVenda,
+        boletoDays,
         sellerEmail: currentUser?.email,
         sellerName: currentUser?.name,
         sellerRole: currentUser?.role,
@@ -295,7 +298,7 @@ export default function FinalizarVendaScreen({ navigation, route }: Props) {
             produtosItems.map((item) => (
               <View key={item.id} style={{ paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' }}>
                 <Text style={{ color: '#111827', fontWeight: '600' }}>
-                  {item.nome} • {item.linha} • {item.cap}ml
+                  {item.nome} • <Text style={{ fontSize: 12, color: '#6B7280' }}>{item.linha}</Text> • {item.cap}ml
                 </Text>
                 <Text style={{ color: '#2563EB', fontSize: 12, marginTop: 2 }}>{getSaleItemTierLabel(item)}</Text>
                 <Text style={{ color: '#6B7280' }}>
@@ -319,7 +322,7 @@ export default function FinalizarVendaScreen({ navigation, route }: Props) {
             bancadaItems.map((item) => (
               <View key={item.id} style={{ paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' }}>
                 <Text style={{ color: '#111827', fontWeight: '600' }}>
-                  {item.nome} • {item.linha} • {item.cap}ml
+                  {item.nome} • <Text style={{ fontSize: 12, color: '#6B7280' }}>{item.linha}</Text> • {item.cap}ml
                 </Text>
                 <Text style={{ color: '#B45309', fontSize: 12, marginTop: 2 }}>{getSaleItemTierLabel(item)}</Text>
                 <Text style={{ color: '#6B7280' }}>
@@ -444,6 +447,37 @@ export default function FinalizarVendaScreen({ navigation, route }: Props) {
                     <Text style={{ color: '#1D4ED8', fontWeight: '700' }}>Total com juros: {formatCurrency(totalFinal)}</Text>
                   </View>
                 </>
+              )}
+              {paymentMethod === 'BOLETO' && (
+                <View style={{ marginTop: 12 }}>
+                  <Text style={{ color: '#111827', fontWeight: '700', marginBottom: 8 }}>Modalidade do boleto</Text>
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                    {[7, 14, 21].map((d) => (
+                      <TouchableOpacity
+                        key={d}
+                        onPress={() => setBoletoDays(d)}
+                        style={{
+                          paddingVertical: 8,
+                          paddingHorizontal: 10,
+                          borderRadius: 999,
+                          borderWidth: 1,
+                          borderColor: boletoDays === d ? '#111827' : '#D1D5DB',
+                          backgroundColor: boletoDays === d ? '#111827' : '#FFFFFF',
+                        }}
+                      >
+                        <Text style={{ color: boletoDays === d ? '#FFFFFF' : '#374151', fontWeight: '700' }}>{d} dias</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                  <View style={{ marginTop: 10, padding: 10, backgroundColor: '#FEF3C7', borderRadius: 8, borderWidth: 1, borderColor: '#FDE68A' }}>
+                    <Text style={{ color: '#92400E' }}>
+                      {boletoDays === 7 && 'Pedidos até R$299,00'}
+                      {boletoDays === 14 && 'Pedidos de R$300,00 até R$599,00'}
+                      {boletoDays === 21 && 'Pedidos acima de R$600,00'}
+                      {!boletoDays && 'Escolha a modalidade de vencimento do boleto.'}
+                    </Text>
+                  </View>
+                </View>
               )}
             </View>
           )}

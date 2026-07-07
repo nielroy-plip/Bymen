@@ -60,6 +60,7 @@ type Props = {
   initialRepostos?: number;
   showSugestao?: boolean;
   averageSale3Months?: number;
+  isConsignado?: boolean;
 };
 
 function parseNumber(v: string) {
@@ -108,6 +109,7 @@ function ProductRowComponent({
   initialRepostos,
   showSugestao = true,
   averageSale3Months = 0,
+  isConsignado = false,
 }: Props) {
   const [estoqueAtual, setEstoqueAtual] = useState(String(initialEstoque ?? product.estoque ?? 0));
   const [vendidos, setVendidos] = useState(String(initialVendidos ?? 0));
@@ -198,12 +200,22 @@ function ProductRowComponent({
   const { width } = Dimensions.get('window');
   const isTablet = width >= 768;
   const lineTheme = getLineTheme(product.linha);
-  const fontSize = {
-    small: isTablet ? 14 : 12,
-    base: isTablet ? 18 : 16,
-    large: isTablet ? 24 : 20,
-    xlarge: isTablet ? 32 : 24,
-  };
+  const normalizedLine = String(product.linha || '').toLowerCase();
+  // reduzir pela metade o tamanho da badge 'LINHA'
+  const badgeFontSize = normalizedLine.includes('wood') || normalizedLine.includes('ocean') ? (isTablet ? 6 : 5) : (isTablet ? 6 : 5);
+  const fontSize = isConsignado
+    ? {
+        small: isTablet ? 16 : 14,
+        base: isTablet ? 22 : 18,
+        large: isTablet ? 28 : 24,
+        xlarge: isTablet ? 34 : 28,
+      }
+    : {
+        small: isTablet ? 12 : 10,
+        base: isTablet ? 16 : 14,
+        large: isTablet ? 20 : 18,
+        xlarge: isTablet ? 28 : 20,
+      };
 
   return (
     <View
@@ -211,16 +223,16 @@ function ProductRowComponent({
         backgroundColor: lineTheme.backgroundColor,
         borderWidth: 1,
         borderColor: lineTheme.borderColor,
-        borderRadius: isTablet ? 16 : 12,
-        padding: isTablet ? 20 : 12,
-        marginBottom: isTablet ? 16 : 12
+        borderRadius: isTablet ? 14 : 10,
+        padding: isConsignado ? (isTablet ? 20 : 16) : (isTablet ? 16 : 8),
+        marginBottom: isConsignado ? (isTablet ? 18 : 14) : (isTablet ? 14 : 10),
       }}
     >
       <Text style={{ fontSize: fontSize.large, fontWeight: '700', color: '#111827', marginBottom: 2 }}>
         {product.nome} - {product.cap}{getProductUnit(product.nome)}
       </Text>
-      <View style={{ alignSelf: 'flex-start', marginBottom: 6, backgroundColor: lineTheme.badgeBg, borderRadius: 999, paddingVertical: 4, paddingHorizontal: 10 }}>
-        <Text style={{ color: lineTheme.badgeText, fontWeight: '700', fontSize: 13 }}>
+      <View style={{ alignSelf: 'flex-start', marginBottom: 6, backgroundColor: lineTheme.badgeBg, borderRadius: 999, paddingVertical: 2, paddingHorizontal: 8 }}>
+        <Text style={{ color: lineTheme.badgeText, fontWeight: '700', fontSize: badgeFontSize }}>
           LINHA {String(product.linha || '').toUpperCase()}
         </Text>
       </View>

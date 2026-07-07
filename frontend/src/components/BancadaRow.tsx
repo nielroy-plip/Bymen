@@ -34,6 +34,7 @@ type Props = {
   product: Product;
   onChange: (row: BancadaRow) => void;
   hideValues?: boolean;
+  isConsignado?: boolean;
 };
 
 type PromoTier = 'BASE' | 'QTD_5' | 'QTD_10';
@@ -87,7 +88,7 @@ function getPricingForQuantity(product: Product, quantity: number): { unitPrice:
   return { unitPrice: product.preco, tier: 'BASE' };
 }
 
-function BancadaRowComponent({ product, onChange, hideValues = false }: Props & { hideValues?: boolean }) {
+function BancadaRowComponent({ product, onChange, hideValues = false, isConsignado = false }: Props & { hideValues?: boolean }) {
   const [quantidadeComprada, setQuantidadeComprada] = useState('');
   const didMountRef = useRef(false);
   const syncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -95,12 +96,22 @@ function BancadaRowComponent({ product, onChange, hideValues = false }: Props & 
   const { width } = Dimensions.get('window');
   const isTablet = width >= 768;
   const lineTheme = getLineTheme(product.linha);
-  const fontSize = {
-    small: isTablet ? 14 : 12,
-    base: isTablet ? 18 : 16,
-    large: isTablet ? 24 : 20,
-    xlarge: isTablet ? 32 : 24,
-  };
+  const normalizedLine = String(product.linha || '').toLowerCase();
+  // reduzir pela metade o tamanho da badge 'LINHA'
+  const badgeFontSize = (isTablet ? 6 : 5);
+  const fontSize = isConsignado
+    ? {
+        small: isTablet ? 16 : 14,
+        base: isTablet ? 22 : 18,
+        large: isTablet ? 28 : 24,
+        xlarge: isTablet ? 34 : 28,
+      }
+    : {
+        small: isTablet ? 12 : 10,
+        base: isTablet ? 16 : 14,
+        large: isTablet ? 20 : 18,
+        xlarge: isTablet ? 28 : 20,
+      };
 
   const calculated = useMemo(() => {
     const qtd = parseNumber(quantidadeComprada);
@@ -167,8 +178,8 @@ function BancadaRowComponent({ product, onChange, hideValues = false }: Props & 
         borderWidth: 1,
         borderColor: lineTheme.borderColor,
         borderRadius: isTablet ? 12 : 8,
-        padding: isTablet ? 16 : 12,
-        marginBottom: isTablet ? 12 : 8
+        padding: isConsignado ? (isTablet ? 20 : 16) : (isTablet ? 12 : 8),
+        marginBottom: isConsignado ? (isTablet ? 16 : 12) : (isTablet ? 12 : 8),
       }}
     >
       {/* Header */}
@@ -176,8 +187,8 @@ function BancadaRowComponent({ product, onChange, hideValues = false }: Props & 
         <Text style={{ fontSize: fontSize.base, fontWeight: '700', color: '#111827' }}>
           {product.nome}
         </Text>
-        <View style={{ alignSelf: 'flex-start', marginTop: 6, marginBottom: 2, backgroundColor: lineTheme.badgeBg, borderRadius: 999, paddingVertical: 4, paddingHorizontal: 10 }}>
-          <Text style={{ color: lineTheme.badgeText, fontWeight: '700', fontSize: 13 }}>
+        <View style={{ alignSelf: 'flex-start', marginTop: 6, marginBottom: 2, backgroundColor: lineTheme.badgeBg, borderRadius: 999, paddingVertical: 2, paddingHorizontal: 8 }}>
+          <Text style={{ color: lineTheme.badgeText, fontWeight: '700', fontSize: badgeFontSize }}>
             LINHA {String(product.linha || '').toUpperCase()}
           </Text>
         </View>

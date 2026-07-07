@@ -23,6 +23,9 @@ export default function LoginScreen({ navigation }: Props) {
   const [cadastroErro, setCadastroErro] = useState('');
 
   async function handleLogin() {
+    // limpar erro anterior antes de tentar login
+    if (erro) setErro('');
+
     if (usuario.trim().length === 0 || senha.trim().length === 0) {
       setErro('Informe usuário e senha');
       return;
@@ -39,9 +42,16 @@ export default function LoginScreen({ navigation }: Props) {
       setErro('');
       navigation.replace('Dashboard');
     } catch (error) {
-      const msg = (error as Error)?.message || 'Credenciais inválidas ou indisponibilidade do servidor';
-      console.error('[LOGIN ERROR]', msg);
-      setErro(msg);
+      const raw = error as any;
+      const msg = raw?.message || 'Credenciais inválidas ou indisponibilidade do servidor';
+      console.warn('[LOGIN WARNING]', msg, raw);
+
+      // Detectar erros de autenticação e mostrar mensagem clara ao usuário
+      if (/401|autentica|credenciais|senha|usu[aá]rio|unauthorized/i.test(msg)) {
+        setErro('Usuário ou senha incorretos');
+      } else {
+        setErro(msg);
+      }
     }
   }
 
@@ -114,11 +124,21 @@ export default function LoginScreen({ navigation }: Props) {
         <Input
           label="E-mail ou usuário"
           value={usuario}
-          onChangeText={setUsuario}
+          onChangeText={(v) => {
+            setUsuario(v);
+            if (erro) setErro('');
+          }}
           placeholder="seu@email.com ou usuario"
           style={{ width: 320, maxWidth: '90%' }}
         />
-        <PasswordInput value={senha} onChangeText={setSenha} style={{ width: 320, maxWidth: '90%' }} />
+        <PasswordInput
+          value={senha}
+          onChangeText={(v) => {
+            setSenha(v);
+            if (erro) setErro('');
+          }}
+          style={{ width: 320, maxWidth: '90%' }}
+        />
         {erro ? <Text style={{ color: '#EF4444', marginBottom: 12 }}>{erro}</Text> : null}
         <Button
           title="Entrar"

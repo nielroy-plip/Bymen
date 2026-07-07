@@ -50,7 +50,7 @@ export default function CriarMedicaoScreen({ navigation, route }: Props) {
   // ========================================
   // NAVEGAÇÃO POR ABAS
   // ========================================
-  const [activeTab, setActiveTab] = useState<'medicao' | 'bancada'>('medicao');
+  const [activeTab, setActiveTab] = useState<'medicao' | 'bancada' | 'bonus'>('medicao');
 
   // ========================================
   // ESTADO: ABA MEDIÇÃO (produtos vendidos)
@@ -336,7 +336,7 @@ export default function CriarMedicaoScreen({ navigation, route }: Props) {
 
   const renderBonusItem = useCallback(
     ({ item }: { item: typeof bonusProducts[number] }) => (
-      <BancadaRowComponent product={item} onChange={handleBonusRowChange} hideValues={true} />
+      <BancadaRowComponent product={item} onChange={handleBonusRowChange} hideValues={true} isConsignado={true} />
     ),
     [handleBonusRowChange],
   );
@@ -366,6 +366,7 @@ export default function CriarMedicaoScreen({ navigation, route }: Props) {
         onChange={handleMedicaoRowChange}
         initialEstoque={item.estoque}
         averageSale3Months={averageSalesByProduct[item.id] ?? 0}
+        isConsignado={true}
       />
     ),
     [averageSalesByProduct, handleMedicaoRowChange],
@@ -373,7 +374,7 @@ export default function CriarMedicaoScreen({ navigation, route }: Props) {
 
   const renderBancadaItem = useCallback(
     ({ item }: { item: typeof bancadaProducts[number] }) => (
-      <BancadaRowComponent product={item} onChange={handleBancadaRowChange} />
+      <BancadaRowComponent product={item} onChange={handleBancadaRowChange} isConsignado={true} />
     ),
     [handleBancadaRowChange],
   );
@@ -484,7 +485,10 @@ export default function CriarMedicaoScreen({ navigation, route }: Props) {
           </View>
         </View>
 
+        {bonusSection}
+
         <Button title="Criar Medição" onPress={handleCreateMedicao} />
+
       </>
     ),
     [
@@ -497,6 +501,7 @@ export default function CriarMedicaoScreen({ navigation, route }: Props) {
       handleCreateMedicao,
     ],
   );
+
 
   const bonusSection = useMemo(
     () => (
@@ -522,17 +527,13 @@ export default function CriarMedicaoScreen({ navigation, route }: Props) {
 
         {bonusOpen && (
           <>
-            <FlatList
-              data={bonusProducts}
-              keyExtractor={(item) => item.id}
-              renderItem={renderBonusItem}
-              scrollEnabled={false}
-              keyboardShouldPersistTaps="handled"
-              initialNumToRender={2}
-              maxToRenderPerBatch={2}
-              windowSize={2}
-              removeClippedSubviews={false}
-            />
+            <View style={{ maxHeight: isTablet ? 360 : 220 }}>
+              {bonusProducts.map((item) => (
+                <View key={item.id} style={{ marginBottom: isTablet ? 12 : 8 }}>
+                  <BancadaRowComponent product={item} onChange={handleBonusRowChange} hideValues={true} isConsignado={true} />
+                </View>
+              ))}
+            </View>
 
             <View
               style={{
@@ -631,6 +632,20 @@ export default function CriarMedicaoScreen({ navigation, route }: Props) {
             </Text>
           </Pressable>
         </View>
+        {/* Botão para abrir aba de Bonificação */}
+        <View style={{ paddingHorizontal: padding, marginBottom: isTablet ? 12 : 10 }}>
+          <Pressable
+            onPress={() => setActiveTab('bonus')}
+            style={{
+              backgroundColor: '#10B981',
+              paddingVertical: isTablet ? 12 : 10,
+              borderRadius: isTablet ? 12 : 8,
+              alignItems: 'center'
+            }}
+          >
+            <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: fontSize.base }}>Bonificação</Text>
+          </Pressable>
+        </View>
       </View>
 
       {/* ================================================ */}
@@ -655,16 +670,19 @@ export default function CriarMedicaoScreen({ navigation, route }: Props) {
             contentContainerStyle={{ padding, paddingBottom: 120 }}
             keyboardShouldPersistTaps="handled"
             keyboardDismissMode="on-drag"
-            initialNumToRender={3}
-            maxToRenderPerBatch={3}
-            windowSize={3}
+            initialNumToRender={4}
+            maxToRenderPerBatch={4}
+            windowSize={5}
             updateCellsBatchingPeriod={50}
-            removeClippedSubviews={false}
+            removeClippedSubviews={true}
             scrollEventThrottle={16}
+            getItemLayout={(_, index) => {
+              const ITEM_HEIGHT = isTablet ? 260 : 220;
+              return { length: ITEM_HEIGHT, offset: ITEM_HEIGHT * index, index };
+            }}
           />
-        ) : (
+        ) : activeTab === 'bancada' ? (
           <>
-            {bonusSection}
             <FlatList
               style={{ flex: 1 }}
               data={bancadaProducts}
@@ -675,14 +693,48 @@ export default function CriarMedicaoScreen({ navigation, route }: Props) {
               contentContainerStyle={{ padding, paddingBottom: 120 }}
               keyboardShouldPersistTaps="handled"
               keyboardDismissMode="on-drag"
-              initialNumToRender={3}
-              maxToRenderPerBatch={3}
-              windowSize={3}
+              initialNumToRender={4}
+              maxToRenderPerBatch={4}
+              windowSize={5}
               updateCellsBatchingPeriod={50}
-              removeClippedSubviews={false}
+              removeClippedSubviews={true}
               scrollEventThrottle={16}
+              getItemLayout={(_, index) => {
+                const ITEM_HEIGHT = isTablet ? 220 : 180;
+                return { length: ITEM_HEIGHT, offset: ITEM_HEIGHT * index, index };
+              }}
             />
           </>
+        ) : (
+          // Aba de Bonificação dedicada
+          <FlatList
+            style={{ flex: 1 }}
+            data={bonusProducts}
+            keyExtractor={(item) => item.id}
+            renderItem={renderBonusItem}
+            ListHeaderComponent={
+              <View style={{ paddingHorizontal: padding, paddingTop: isTablet ? 12 : 10 }}>
+                <Text style={{ fontSize: fontSize.large, fontWeight: '700', color: '#111827', marginBottom: isTablet ? 8 : 6 }}>
+                  Bonificação
+                </Text>
+                <Pressable onPress={() => setActiveTab('bancada')} style={{ marginBottom: isTablet ? 8 : 6 }}>
+                  <Text style={{ color: '#6B7280' }}>Voltar</Text>
+                </Pressable>
+              </View>
+            }
+            contentContainerStyle={{ padding, paddingBottom: 120 }}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
+            initialNumToRender={4}
+            maxToRenderPerBatch={4}
+            windowSize={5}
+            removeClippedSubviews={true}
+            scrollEventThrottle={16}
+            getItemLayout={(_, index) => {
+              const ITEM_HEIGHT = isTablet ? 220 : 180;
+              return { length: ITEM_HEIGHT, offset: ITEM_HEIGHT * index, index };
+            }}
+          />
         )}
       </View>
       </KeyboardAvoidingView>

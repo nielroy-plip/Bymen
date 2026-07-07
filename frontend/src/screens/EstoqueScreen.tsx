@@ -787,7 +787,7 @@ export default function EstoqueScreen({ navigation }: Props) {
                     <Text style={{ color: '#DC2626', fontWeight: '700' }}>Remover</Text>
                   </Pressable>
                 </View>
-                <Text style={{ color: '#6B7280' }}>Linha: {p.linha}</Text>
+                <Text style={{ color: '#6B7280', fontSize: 12 }}>Linha: {p.linha}</Text>
                 <Text style={{ color: '#6B7280' }}>Estoque Atual: {p.estoque}</Text>
                 {getProductVisibilityNote(p.id) && (
                   <Text style={{ color: '#0F766E', marginTop: 2 }}>
@@ -856,7 +856,7 @@ export default function EstoqueScreen({ navigation }: Props) {
                     <Text style={{ color: '#DC2626', fontWeight: '700' }}>Remover</Text>
                   </Pressable>
                 </View>
-                <Text style={{ color: '#6B7280' }}>Linha: {p.linha}</Text>
+                <Text style={{ color: '#6B7280', fontSize: 12 }}>Linha: {p.linha}</Text>
                 <Text style={{ color: '#6B7280' }}>Capacidade: {p.cap}{getProductUnit(p.nome)}</Text>
                 <Text style={{ color: '#6B7280' }}>Estoque Atual: {p.estoque}</Text>
                 {getProductVisibilityNote(p.id) && (

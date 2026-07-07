@@ -52,6 +52,7 @@ export type RootStackParamList = {
     }>;
     total: number;
     paymentMethod?: 'PIX' | 'DINHEIRO' | 'CARTAO' | 'BOLETO';
+    boletoDays?: number | null;
     isCreditInstallment?: boolean;
     installmentCount?: number;
     creditMonthlyInterestPercent?: number;
@@ -251,17 +252,17 @@ export default function Routes() {
         name="Relatorios"
         component={RelatoriosScreen}
         options={{
-          title: 'Relatórios',
+          title: 'Relatórios Clientes',
           headerBackTitle: 'Dashboard',
         }}
       />
       <Stack.Screen
-        name="RelatorioVendedor"
-        component={RelatorioVendedorScreen}
-        options={{
-          title: 'Relatório de Vendedor',
-          headerBackTitle: 'Dashboard',
-        }}
+      name="RelatorioVendedor"
+      component={RelatorioVendedorScreen}
+      options={{
+        title: 'Relatório de Vendas Mensal',
+        headerBackTitle: 'Dashboard',
+      }}
       />
       <Stack.Screen
         name="RelatorioEstoqueRua"

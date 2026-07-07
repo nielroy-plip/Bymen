@@ -5,7 +5,7 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../routes';
 import Input from '../components/Input';
 import Button from '../components/Button';
-import { getCurrentUser, listMeasurements, listSales, Measurement, Sale } from '../services/api';
+import { getCurrentUser, listMeasurements, listSales, listUsersForManagement, ManagedUser, Measurement, Sale } from '../services/api';
 import { formatCurrency } from '../utils/format';
 import { AppRole, canManageSellerGoals, getUserAppRole } from '../services/access';
 import { getSellerGoals, saveSellerGoal, SellerGoalMap } from '../services/sellerGoals';
@@ -66,6 +66,7 @@ export default function RelatorioVendedorScreen() {
   const [currentUserEmail, setCurrentUserEmail] = useState('');
   const [currentUserName, setCurrentUserName] = useState('');
   const [role, setRole] = useState<AppRole>('VENDEDOR');
+  const [managedUsers, setManagedUsers] = useState<ManagedUser[]>([]);
 
   const loadData = useCallback(async () => {
     const [allSales, allMeasurements, user, savedGoals] = await Promise.all([
@@ -78,9 +79,27 @@ export default function RelatorioVendedorScreen() {
     setSales(allSales);
     setMeasurements(allMeasurements);
     setGoals(savedGoals);
-    setCurrentUserEmail(String(user?.email || '').trim().toLowerCase());
+    const normalizedEmail = String(user?.email || '').trim().toLowerCase();
+    setCurrentUserEmail(normalizedEmail);
     setCurrentUserName(String(user?.username || user?.email || '').trim());
-    setRole(getUserAppRole(user));
+    const appRole = getUserAppRole(user);
+    setRole(appRole);
+
+    // load managed users for gestores so they can view vendedores and supervisores even without activity
+    if (canManageSellerGoals(appRole) && normalizedEmail) {
+      try {
+        const remote = await listUsersForManagement(normalizedEmail);
+        const eligible = (remote || []).filter((u: ManagedUser) => {
+          const r = String(u.role || '').trim().toUpperCase();
+          return r === 'VENDEDOR' || r === 'SUPERVISOR';
+        });
+        setManagedUsers(eligible);
+      } catch {
+        setManagedUsers([]);
+      }
+    } else {
+      setManagedUsers([]);
+    }
 
     const initialGoalInputs: Record<string, string> = {};
     Object.keys(savedGoals).forEach((key) => {
@@ -186,7 +205,29 @@ export default function RelatorioVendedorScreen() {
 
   const visibleSummaries = useMemo(() => {
     if (canManageSellerGoals(role)) {
-      return allSummaries;
+      // gestores see all sellers and supervisors, including those without sales/measurements
+      const map = new Map(allSummaries.map((s) => [String(s.sellerKey || '').trim().toLowerCase(), s]));
+      // add managed users (vendedores/supervisores) if not present
+      managedUsers.forEach((u) => {
+        const email = String(u.email || '').trim().toLowerCase();
+        if (!map.has(email)) {
+          map.set(email, {
+            sellerKey: email,
+            sellerName: String(u.username || u.email || email),
+            monthSalesTotal: 0,
+            monthMeasurementsTotal: 0,
+            monthTotal: 0,
+            allTimeSalesTotal: 0,
+            allTimeMeasurementsTotal: 0,
+            allTimeTotal: 0,
+            salesCount: 0,
+            measurementsCount: 0,
+            operationsCount: 0,
+          });
+        }
+      });
+
+      return Array.from(map.values()).sort((a, b) => b.monthTotal - a.monthTotal);
     }
 
     const key = currentUserEmail || currentUserName.toLowerCase();
@@ -211,10 +252,29 @@ export default function RelatorioVendedorScreen() {
         operationsCount: 0,
       },
     ];
-  }, [allSummaries, role, currentUserEmail, currentUserName]);
+  }, [allSummaries, role, currentUserEmail, currentUserName, managedUsers]);
 
   function getGoalForSeller(sellerKey: string): number {
     return Number(goals[sellerKey] || 0);
+  }
+
+  function getTeamGoal(): number {
+    return Number(goals['meta_comercial'] || 0);
+  }
+
+  async function handleSaveTeamGoal() {
+    const raw = String(goalInputs['meta_comercial'] || '').replace(',', '.');
+    const goalValue = Number(raw);
+
+    if (!Number.isFinite(goalValue) || goalValue < 0) {
+      Alert.alert('Validação', 'Informe uma meta válida maior ou igual a zero.');
+      return;
+    }
+
+    const next = await saveSellerGoal('meta_comercial', goalValue);
+    setGoals(next);
+    setGoalInputs((prev) => ({ ...prev, meta_comercial: String(goalValue).replace('.', ',') }));
+    Alert.alert('Sucesso', 'Meta comercial atualizada.');
   }
 
   function getProgressPercent(monthTotal: number, goal: number): number {
@@ -237,15 +297,41 @@ export default function RelatorioVendedorScreen() {
     Alert.alert('Sucesso', 'Meta do vendedor atualizada.');
   }
 
+  const teamTotal = useMemo(() => {
+    return allSummaries.reduce((acc, s) => acc + (s.monthTotal || 0), 0);
+  }, [allSummaries]);
+
   return (
     <View style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
       <ScrollView ref={scrollRef} contentContainerStyle={{ padding: 24, paddingBottom: 120 }} keyboardShouldPersistTaps="handled">
-        <Text style={{ fontSize: 22, fontWeight: '700', color: '#111827', marginBottom: 6 }}>Relatório de Vendedor</Text>
+        <Text style={{ fontSize: 22, fontWeight: '700', color: '#111827', marginBottom: 6 }}>Relatório de Vendas Mensal</Text>
         <Text style={{ color: '#6B7280', marginBottom: 14 }}>
           {canManageSellerGoals(role)
             ? 'Visão em tempo real de todos os vendedores (vendas e consignado) com gestão de metas.'
             : 'Acompanhe seu desempenho em vendas e consignado, meta e evolução em tempo real.'}
         </Text>
+
+        {canManageSellerGoals(role) && (
+          <View style={{ marginBottom: 12 }}>
+            <Input
+              label="Meta comercial (R$)"
+              value={goalInputs['meta_comercial'] ?? String(getTeamGoal() || '').replace('.', ',')}
+              onChangeText={(value) =>
+                setGoalInputs((prev) => ({ ...prev, meta_comercial: String(value || '').replace(/[^\d,\.]/g, '').replace('.', ',') }))
+              }
+              onFocus={handleFieldFocus}
+              keyboardType="numeric"
+              placeholder="Ex: 20000,00"
+            />
+            <Button title="Salvar meta comercial" icon="save-outline" onPress={handleSaveTeamGoal} />
+          </View>
+        )}
+
+        {/* pre-compute team totals for display */}
+        {
+          /* eslint-disable-next-line @typescript-eslint/no-unused-vars */
+        }
+        
 
         {visibleSummaries.map((summary) => {
           const goal = getGoalForSeller(summary.sellerKey);
@@ -267,10 +353,11 @@ export default function RelatorioVendedorScreen() {
               <Text style={{ fontSize: 16, fontWeight: '700', color: '#111827', marginBottom: 4 }}>{summary.sellerName}</Text>
               <Text style={{ color: '#6B7280', marginBottom: 8 }}>{summary.sellerKey}</Text>
 
-              <Text style={{ color: '#111827', marginBottom: 3 }}>Vendas no mês: {formatCurrency(summary.monthSalesTotal)}</Text>
-              <Text style={{ color: '#111827', marginBottom: 3 }}>Consignado no mês: {formatCurrency(summary.monthMeasurementsTotal)}</Text>
-              <Text style={{ color: '#111827', marginBottom: 3, fontWeight: '700' }}>Total no mês: {formatCurrency(summary.monthTotal)}</Text>
-              <Text style={{ color: '#111827', marginBottom: 3 }}>Vendas total: {formatCurrency(summary.allTimeSalesTotal)}</Text>
+
+              <Text style={{ color: '#111827', marginBottom: 3 }}>Faturamento : {formatCurrency(summary.monthSalesTotal)}</Text>
+              <Text style={{ color: '#111827', marginBottom: 3 }}>Consignado : {formatCurrency(summary.monthMeasurementsTotal)}</Text>
+              <Text style={{ color: '#111827', marginBottom: 3, fontWeight: '700' }}>Total faturado: {formatCurrency(summary.monthTotal)}</Text>
+              <Text style={{ color: '#111827', marginBottom: 3 }}>Faturamento total: {formatCurrency(summary.allTimeSalesTotal)}</Text>
               <Text style={{ color: '#111827', marginBottom: 3 }}>Consignado total: {formatCurrency(summary.allTimeMeasurementsTotal)}</Text>
               <Text style={{ color: '#111827', marginBottom: 3, fontWeight: '700' }}>Total acumulado: {formatCurrency(summary.allTimeTotal)}</Text>
               <Text style={{ color: '#111827', marginBottom: 3 }}>Qtd. vendas: {summary.salesCount}</Text>
@@ -279,9 +366,66 @@ export default function RelatorioVendedorScreen() {
               <Text style={{ color: '#111827', marginBottom: 8 }}>Ticket médio geral: {formatCurrency(averageTicket)}</Text>
 
               <Text style={{ color: '#374151', marginBottom: 4 }}>Meta mensal: {goal > 0 ? formatCurrency(goal) : 'Não definida'}</Text>
-              <Text style={{ color: progressPercent >= 100 ? '#166534' : '#1D4ED8', marginBottom: 8, fontWeight: '700' }}>
-                Progresso: {progressPercent.toFixed(1).replace('.', ',')}%
-              </Text>
+
+              {/* Individual tiers */}
+              {goal > 0 ? (
+                (() => {
+                  const percents = [1, 1.1, 1.2, 1.3];
+                  const thresholds = percents.map((p) => Number((goal * p).toFixed(2)));
+                  const achieved = thresholds.map((t) => summary.monthTotal >= t);
+                  const activeIndex = thresholds.findIndex((t) => summary.monthTotal < t);
+                  const activeIdx = activeIndex === -1 ? thresholds.length - 1 : activeIndex;
+                  const activeThreshold = thresholds[activeIdx];
+                  const activeProgress = activeThreshold > 0 ? Number(Math.min((summary.monthTotal / activeThreshold) * 100, 999).toFixed(1)) : 0;
+
+                  return (
+                    <View style={{ marginBottom: 8 }}>
+                      <Text style={{ color: '#374151', marginBottom: 6, fontWeight: '600' }}>Metas (100%, 110%, 120%, 130%)</Text>
+                      {thresholds.map((t, i) => (
+                        <Text
+                          key={i}
+                          style={{ color: achieved[i] ? '#166534' : i === activeIdx ? '#1D4ED8' : '#6B7280', marginBottom: 2 }}
+                        >
+                          {i === activeIdx ? '→ ' : '   '}{Math.round((percents[i] * 100))}% : {formatCurrency(t)} {achieved[i] ? '✓' : i === activeIdx ? `(${activeProgress.toFixed(1).replace('.', ',')}%)` : ''}
+                        </Text>
+                      ))}
+                    </View>
+                  );
+                })()
+              ) : (
+                <Text style={{ color: '#6B7280', marginBottom: 8 }}>Defina a meta individual para ver os níveis.</Text>
+              )}
+
+              {/* Comercial tiers */}
+              <Text style={{ color: '#374151', marginBottom: 4 }}>Meta comercial: {getTeamGoal() > 0 ? formatCurrency(getTeamGoal()) : 'Não definida'}</Text>
+              {getTeamGoal() > 0 ? (
+                (() => {
+                  const teamGoal = getTeamGoal();
+                  const percents = [1, 1.1, 1.2, 1.3];
+                  const thresholds = percents.map((p) => Number((teamGoal * p).toFixed(2)));
+                  const achieved = thresholds.map((t) => teamTotal >= t);
+                  const activeIndex = thresholds.findIndex((t) => teamTotal < t);
+                  const activeIdx = activeIndex === -1 ? thresholds.length - 1 : activeIndex;
+                  const activeThreshold = thresholds[activeIdx];
+                  const activeProgress = activeThreshold > 0 ? Number(Math.min((teamTotal / activeThreshold) * 100, 999).toFixed(1)) : 0;
+
+                  return (
+                    <View style={{ marginBottom: 8 }}>
+                      <Text style={{ color: '#374151', marginBottom: 6, fontWeight: '600' }}>Metas comerciais (100%, 110%, 120%, 130%)</Text>
+                      {thresholds.map((t, i) => (
+                        <Text
+                          key={`team-${i}`}
+                          style={{ color: achieved[i] ? '#166534' : i === activeIdx ? '#1D4ED8' : '#6B7280', marginBottom: 2 }}
+                        >
+                          {i === activeIdx ? '→ ' : '   '}{Math.round((percents[i] * 100))}% : {formatCurrency(t)} {achieved[i] ? '✓' : i === activeIdx ? `(${activeProgress.toFixed(1).replace('.', ',')}%)` : ''}
+                        </Text>
+                      ))}
+                    </View>
+                  );
+                })()
+              ) : (
+                <Text style={{ color: '#6B7280', marginBottom: 8 }}>Defina a meta comercial para ver os níveis.</Text>
+              )}
 
               {canManageSellerGoals(role) && (
                 <>

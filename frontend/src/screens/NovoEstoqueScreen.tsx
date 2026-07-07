@@ -279,7 +279,7 @@ type Props = NativeStackScreenProps<RootStackParamList, 'NovoEstoque'>;
                 <View style={{ marginBottom: 12 }} key={p.id}>
                   <Card>
                     <Text style={{ fontSize: 16, fontWeight: '600', color: '#111827' }}>{p.nome}</Text>
-                    <Text style={{ color: '#6B7280' }}>Linha: {p.linha}</Text>
+                    <Text style={{ color: '#6B7280', fontSize: 12 }}>Linha: {p.linha}</Text>
                     <Text style={{ color: '#6B7280' }}>Capacidade: {p.cap}{getProductUnit(p.nome)}</Text>
                     <Input
                       label="Quantidade Inicial"
@@ -301,7 +301,7 @@ type Props = NativeStackScreenProps<RootStackParamList, 'NovoEstoque'>;
                 <View style={{ marginBottom: 12 }} key={p.id}>
                   <Card>
                     <Text style={{ fontSize: 16, fontWeight: '600', color: '#111827' }}>{p.nome}</Text>
-                    <Text style={{ color: '#6B7280' }}>Linha: {p.linha}</Text>
+                    <Text style={{ color: '#6B7280', fontSize: 12 }}>Linha: {p.linha}</Text>
                     <Text style={{ color: '#6B7280' }}>Capacidade: {p.cap}{getProductUnit(p.nome)}</Text>
                     <Text style={{ color: '#991B1B', fontWeight: '600' }}>Valor unitário: R${p.preco.toFixed(2).replace('.',',')}</Text>
                     <Input

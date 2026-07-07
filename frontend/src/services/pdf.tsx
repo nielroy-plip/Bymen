@@ -304,7 +304,7 @@ export async function generateMeasurementPDF(params: {
   // ASSINATURA
   // ========================================
   const assinatura = params.signatureDataUrl
-    ? `<div style="page-break-inside:avoid;"><img src="${params.signatureDataUrl}" style="width:200px;height:auto;border:1px solid #e5e7eb;" /></div>`
+    ? `<div style="page-break-inside:avoid;padding:8px;border:1px solid #e5e7eb;border-radius:6px;display:inline-block"><img src="${params.signatureDataUrl}" style="width:200px;height:auto;display:block" /></div>`
     : '<div style="color:#9CA3AF">Assinatura não coletada</div>';
 
   // ========================================

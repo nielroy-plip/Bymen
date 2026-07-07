@@ -143,10 +143,11 @@ export default function DashboardScreen({ navigation }: Props) {
       onPress: () => navigation.navigate('PendenciasSync'),
     },
     {
-      title: 'Relatórios',
+      title: 'Relatórios Clientes',
       icon: 'bar-chart-outline' as const,
       onPress: () => navigation.navigate('Relatorios'),
     },
+
     {
       title: 'Usuário',
       icon: 'settings-outline' as const,

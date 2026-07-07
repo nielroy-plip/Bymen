@@ -203,7 +203,11 @@ export default function VendasScreen({ navigation, route }: Props) {
         if (!matchesTab) return false;
 
         const hidden = visibilityRules[p.id]?.hiddenIn || [];
-        if (isBancada) return !hidden.includes('VENDAS_BANCADA');
+        if (isBancada) {
+          const allowedBancada = /(shampoo|gel|condicionador|balm|pós|pos|pós-barba|pós barba)/i;
+          if (!allowedBancada.test(String(p.nome || ''))) return false;
+          return !hidden.includes('VENDAS_BANCADA');
+        }
         return !hidden.includes('VENDAS_PRODUTOS');
       }),
     [activeTab, products, visibilityRules],
@@ -292,6 +296,8 @@ export default function VendasScreen({ navigation, route }: Props) {
             </Pressable>
           </View>
 
+          
+
           {displayedProducts.map((product) => (
             <Card key={product.id} style={getLineCardTheme(product.linha).cardStyle}>
               {(() => {
@@ -300,32 +306,32 @@ export default function VendasScreen({ navigation, route }: Props) {
                 const lineTheme = getLineCardTheme(product.linha);
                 return (
                   <>
-              <Text style={{ fontSize: 16, fontWeight: '700', color: '#111827' }}>{product.nome}</Text>
-              <View style={{ alignSelf: 'flex-start', marginTop: 6, marginBottom: 2, backgroundColor: lineTheme.badgeBg, borderRadius: 999, paddingVertical: 4, paddingHorizontal: 10 }}>
-                <Text style={{ color: lineTheme.badgeText, fontWeight: '700', fontSize: 13 }}>LINHA {String(product.linha || '').toUpperCase()}</Text>
+              <Text style={{ fontSize: 14, fontWeight: '700', color: '#111827' }}>{product.nome}</Text>
+              <View style={{ alignSelf: 'flex-start', marginTop: 4, marginBottom: 2, backgroundColor: lineTheme.badgeBg, borderRadius: 999, paddingVertical: 2, paddingHorizontal: 8 }}>
+                <Text style={{ color: lineTheme.badgeText, fontWeight: '700', fontSize: 11 }}>LINHA {String(product.linha || '').toUpperCase()}</Text>
               </View>
-              <Text style={{ color: '#6B7280', marginTop: 4 }}>
+              <Text style={{ color: '#6B7280', marginTop: 4, fontSize: 12 }}>
                 {product.cap}ml • Disponível: {product.estoque}
               </Text>
-              <Text style={{ color: '#1F2937', marginTop: 4, fontWeight: '600' }}>
+              <Text style={{ color: '#1F2937', marginTop: 4, fontWeight: '600', fontSize: 12 }}>
                 Preço base: {formatCurrency(product.preco)}
               </Text>
               {(typeof product.preco5 === 'number' || typeof product.preco10 === 'number') && (
-                <Text style={{ color: '#2563EB', marginTop: 2, fontSize: 12 }}>
+                <Text style={{ color: '#2563EB', marginTop: 2, fontSize: 11 }}>
                   Promo: 5 un = {formatCurrency(product.preco5 ?? product.preco)} • 10 un = {formatCurrency(product.preco10 ?? product.preco5 ?? product.preco)}
                 </Text>
               )}
               {typeof product.precoSugestao === 'number' && (
-                <Text style={{ color: lineTheme.subtitle, marginTop: 2, fontSize: 12 }}>
+                <Text style={{ color: lineTheme.subtitle, marginTop: 2, fontSize: 11 }}>
                   Sugestão revenda: {formatCurrency(product.precoSugestao)}
                 </Text>
               )}
               {quantidadeAtual > 0 && (
-                <Text style={{ color: '#059669', marginTop: 2, fontSize: 12, fontWeight: '700' }}>
+                <Text style={{ color: '#059669', marginTop: 2, fontSize: 11, fontWeight: '700' }}>
                   Preço aplicado: {formatCurrency(precoAtual)}
                 </Text>
               )}
-              <View style={{ marginTop: 12 }}>
+              <View style={{ marginTop: 8 }}>
                 <Input
                   label="Quantidade"
                   value={quantities[product.id] || ''}
@@ -354,6 +360,8 @@ export default function VendasScreen({ navigation, route }: Props) {
               Total: {formatCurrency(total)}
             </Text>
           </Card>
+
+          
 
           <Button
             title="Finalizar venda"

@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text, ScrollView, Modal, TouchableOpacity, useWindowDimensions, Alert, TextInput } from 'react-native';
+import { View, Text, ScrollView, Modal, TouchableOpacity, useWindowDimensions, Alert, TextInput, Platform } from 'react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { Ionicons } from '@expo/vector-icons';
 import { listClients, listMeasurements, listProducts, listSales, Measurement, Sale } from '../services/api';
 import { Client } from '../data/clients';
@@ -101,6 +102,21 @@ export default function RelatoriosScreen() {
   const [modalFiltroMedicaoVisible, setModalFiltroMedicaoVisible] = useState(false);
   const [modalFiltroBancadaVisible, setModalFiltroBancadaVisible] = useState(false);
   const [periodo, setPeriodo] = useState<'12m' | '6m' | '3m'>('12m');
+  const [customPeriodModalVisible, setCustomPeriodModalVisible] = useState(false);
+  const [customStart, setCustomStart] = useState(''); // DD/MM/YYYY
+  const [customEnd, setCustomEnd] = useState(''); // DD/MM/YYYY
+  const [showStartPicker, setShowStartPicker] = useState(false);
+  const [showEndPicker, setShowEndPicker] = useState(false);
+  const [startDateObj, setStartDateObj] = useState<Date | null>(null);
+  const [endDateObj, setEndDateObj] = useState<Date | null>(null);
+
+  function formatDateToString(d: Date | null) {
+    if (!d) return '';
+    const dd = String(d.getDate()).padStart(2, '0');
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const yyyy = d.getFullYear();
+    return `${dd}/${mm}/${yyyy}`;
+  }
   const [produtoFiltroMedicao, setProdutoFiltroMedicao] = useState<string>(FILTER_ALL);
   const [produtoFiltroBancada, setProdutoFiltroBancada] = useState<string>(FILTER_ALL);
   const [searchFiltroMedicao, setSearchFiltroMedicao] = useState('');
@@ -246,6 +262,35 @@ export default function RelatoriosScreen() {
   }, [produtosFiltroBancada, searchFiltroBancada, linhaFiltroBancada]);
 
   const monthWindow = useMemo(() => {
+    // If custom start/end provided, build months between them (inclusive), limiting to max 12 months
+    function parseInputDate(str: string): Date | null {
+      const [d, m, y] = String(str || '').split('/');
+      if (!d || !m || !y) return null;
+      const day = Number(d);
+      const month = Number(m) - 1;
+      const year = Number(y);
+      if (!Number.isFinite(day) || !Number.isFinite(month) || !Number.isFinite(year)) return null;
+      return new Date(year, month, day);
+    }
+
+    if (customStart && customEnd) {
+      const start = parseInputDate(customStart);
+      const end = parseInputDate(customEnd);
+      if (start && end && start <= end) {
+        // limit to maximum 12 months
+        const months: { key: string; label: string }[] = [];
+        let cursor = new Date(start.getFullYear(), start.getMonth(), 1);
+        const last = new Date(end.getFullYear(), end.getMonth(), 1);
+        let added = 0;
+        while (cursor <= last && added < 12) {
+          months.push({ key: getMonthKey(cursor), label: monthNames[cursor.getMonth()] });
+          cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1);
+          added += 1;
+        }
+        return months;
+      }
+    }
+
     const count = periodo === '12m' ? 12 : periodo === '6m' ? 6 : 3;
     const now = new Date();
     const months: { key: string; label: string }[] = [];
@@ -256,7 +301,7 @@ export default function RelatoriosScreen() {
     }
 
     return months;
-  }, [periodo]);
+  }, [periodo, customStart, customEnd]);
 
   const salesData = useMemo(() => {
     const source = measurements.filter((m) => (barbeariaId ? m.clientId === barbeariaId : true));
@@ -452,9 +497,10 @@ export default function RelatoriosScreen() {
   }, [sales, barbeariaId, monthWindow, produtoFiltroBancada]);
 
   const periodLabel = useMemo(() => {
+    if (customStart && customEnd) return `${customStart} → ${customEnd}`;
     const selected = periodos.find((p) => p.value === periodo);
-    return selected?.label || 'Período customizado';
-  }, [periodo]);
+    return selected?.label || 'Período selecionado';
+  }, [periodo, customStart, customEnd]);
 
   async function handleExportChart(
     chartTitle: string,
@@ -557,7 +603,7 @@ export default function RelatoriosScreen() {
           letterSpacing: 0.5,
         }}
       >
-        Relatórios e Gráficos
+        Relatórios Clientes
       </Text>
 
       <View
@@ -638,7 +684,7 @@ export default function RelatoriosScreen() {
           <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: isSmallScreen ? 6 : 0 }}>
             <Ionicons name="trending-up-outline" size={22} color="#3B82F6" style={{ marginRight: 8 }} />
             <Text style={{ fontSize: isSmallScreen ? 15 : 19, fontWeight: '700', color: '#3B82F6', letterSpacing: 0.2 }}>
-              Vendas por mês (colunas)
+              Resumo de vendas mensal
             </Text>
           </View>
           <TouchableOpacity
@@ -657,25 +703,121 @@ export default function RelatoriosScreen() {
             <Ionicons name="share-outline" size={18} color="#2563EB" />
           </TouchableOpacity>
         </View>
-        {/* Filtro de período */}
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
-          {periodos.map(p => (
-            <TouchableOpacity
-              key={p.value}
-              style={{
-                backgroundColor: periodo === p.value ? '#2563EB' : '#E0E7FF',
-                paddingVertical: isSmallScreen ? 2 : 4,
-                paddingHorizontal: isSmallScreen ? 8 : 12,
-                borderRadius: 8,
-                marginRight: 6,
-                marginBottom: isSmallScreen ? 4 : 0,
-              }}
-              onPress={() => setPeriodo(p.value as '12m' | '6m' | '3m')}
-            >
-              <Text style={{ color: periodo === p.value ? '#fff' : '#2563EB', fontWeight: '600', fontSize: isSmallScreen ? 11 : 13 }}>{p.label}</Text>
-            </TouchableOpacity>
-          ))}
+        {/* Filtro de período: botão único que abre modal para escolher período (dentro de 1 ano) */}
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 8, alignItems: 'center' }}>
+          <TouchableOpacity
+            style={{ backgroundColor: '#E0E7FF', paddingVertical: isSmallScreen ? 6 : 8, paddingHorizontal: 12, borderRadius: 8 }}
+            onPress={() => setCustomPeriodModalVisible(true)}
+          >
+            <Text style={{ color: '#2563EB', fontWeight: '600', fontSize: isSmallScreen ? 12 : 14 }}>Selecionar período</Text>
+          </TouchableOpacity>
+          <Text style={{ color: '#6B7280', marginLeft: 8 }}>
+            {customStart && customEnd ? `${customStart} → ${customEnd}` : periodo === '12m' ? 'Últimos 12 meses' : periodo === '6m' ? 'Últimos 6 meses' : 'Últimos 3 meses'}
+          </Text>
         </View>
+
+        {/* Modal para seleção de período customizado */}
+        <Modal visible={customPeriodModalVisible} transparent animationType="fade">
+          <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', alignItems: 'center' }}>
+            <View style={{ width: Math.min(520, isSmallScreen ? 320 : 420), backgroundColor: '#fff', borderRadius: 12, padding: 16 }}>
+              <Text style={{ fontSize: 16, fontWeight: '700', marginBottom: 8 }}>Selecionar período</Text>
+              <Text style={{ color: '#6B7280', marginBottom: 12 }}>Informe data inicial e final (formato DD/MM/AAAA). Máximo 12 meses.</Text>
+              <TouchableOpacity
+                onPress={() => {
+                  // initialize startDateObj from existing string if possible
+                  const [d, m, y] = String(customStart || '').split('/');
+                  const parsed = d && m && y ? new Date(Number(y), Number(m) - 1, Number(d)) : new Date();
+                  setStartDateObj(parsed);
+                  setShowStartPicker(true);
+                }}
+                style={{ borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 8, padding: 12, marginBottom: 8 }}
+              >
+                <Text style={{ color: customStart ? '#111827' : '#9CA3AF' }}>{customStart ? customStart : 'Data inicial (DD/MM/AAAA)'}</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={() => {
+                  const [d, m, y] = String(customEnd || '').split('/');
+                  const parsed = d && m && y ? new Date(Number(y), Number(m) - 1, Number(d)) : new Date();
+                  setEndDateObj(parsed);
+                  setShowEndPicker(true);
+                }}
+                style={{ borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 8, padding: 12, marginBottom: 12 }}
+              >
+                <Text style={{ color: customEnd ? '#111827' : '#9CA3AF' }}>{customEnd ? customEnd : 'Data final (DD/MM/AAAA)'}</Text>
+              </TouchableOpacity>
+
+              {showStartPicker && (
+                <DateTimePicker
+                  value={startDateObj || new Date()}
+                  mode="date"
+                  display={Platform.OS === 'ios' ? 'spinner' : 'calendar'}
+                  onChange={(_, selected) => {
+                    const current = selected || startDateObj || new Date();
+                    setShowStartPicker(Platform.OS === 'ios');
+                    setStartDateObj(current);
+                    setCustomStart(formatDateToString(current));
+                  }}
+                />
+              )}
+
+              {showEndPicker && (
+                <DateTimePicker
+                  value={endDateObj || new Date()}
+                  mode="date"
+                  display={Platform.OS === 'ios' ? 'spinner' : 'calendar'}
+                  onChange={(_, selected) => {
+                    const current = selected || endDateObj || new Date();
+                    setShowEndPicker(Platform.OS === 'ios');
+                    setEndDateObj(current);
+                    setCustomEnd(formatDateToString(current));
+                  }}
+                />
+              )}
+              <View style={{ flexDirection: 'row', justifyContent: 'flex-end' }}>
+                <TouchableOpacity onPress={() => { setCustomStart(''); setCustomEnd(''); setCustomPeriodModalVisible(false); }} style={{ marginRight: 8 }}>
+                  <Text style={{ color: '#6B7280', padding: 8 }}>Cancelar</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => {
+                    // validar datas
+                    const parse = (s: string) => {
+                      const [d, m, y] = String(s || '').split('/');
+                      if (!d || !m || !y) return null;
+                      const day = Number(d);
+                      const month = Number(m) - 1;
+                      const year = Number(y);
+                      if (!Number.isFinite(day) || !Number.isFinite(month) || !Number.isFinite(year)) return null;
+                      return new Date(year, month, day);
+                    };
+                    const start = parse(customStart);
+                    const end = parse(customEnd);
+                    if (!start || !end) {
+                      Alert.alert('Validação', 'Informe datas válidas no formato DD/MM/AAAA.');
+                      return;
+                    }
+                    if (start > end) {
+                      Alert.alert('Validação', 'A data inicial deve ser anterior ou igual à data final.');
+                      return;
+                    }
+                    const diffMs = end.getTime() - start.getTime();
+                    const diffDays = diffMs / (1000 * 60 * 60 * 24);
+                    if (diffDays > 366) {
+                      Alert.alert('Validação', 'O período não pode exceder 12 meses.');
+                      return;
+                    }
+                    // aceitar período
+                    setCustomPeriodModalVisible(false);
+                    // monthWindow é recalculado via customStart/customEnd state
+                  }}
+                  style={{ backgroundColor: '#2563EB', borderRadius: 8, paddingVertical: 8, paddingHorizontal: 12 }}
+                >
+                  <Text style={{ color: '#fff', fontWeight: '700' }}>Aplicar</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
         <View style={{ marginTop: 2 }}>
           {monthlySalesBars.map((item, index) => (
             <View key={`sales-bar-${item.label}-${index}`} style={{ marginBottom: 10 }}>

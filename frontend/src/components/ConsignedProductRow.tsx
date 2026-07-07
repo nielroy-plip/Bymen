@@ -1,5 +1,4 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text } from 'react-native';
 import Input from './Input';
 import { Dimensions, View, Text } from 'react-native';
 import { ConsignedProductRow as ConsignedProductRowType } from '../services/api';
@@ -33,10 +32,10 @@ export default function ConsignedProductRow({ product, onChange, initialQuantida
   const { width } = Dimensions.get('window');
   const isTablet = width >= 768;
   const fontSize = {
-    small: isTablet ? 14 : 12,
-    base: isTablet ? 18 : 16,
-    large: isTablet ? 24 : 20,
-    xlarge: isTablet ? 32 : 24,
+    small: isTablet ? 16 : 14,
+    base: isTablet ? 22 : 18,
+    large: isTablet ? 28 : 24,
+    xlarge: isTablet ? 34 : 28,
   };
 
   useEffect(() => {
@@ -83,17 +82,17 @@ export default function ConsignedProductRow({ product, onChange, initialQuantida
         backgroundColor: '#FFFFFF',
         borderWidth: 1,
         borderColor: '#E5E7EB',
-        borderRadius: isTablet ? 12 : 8,
-        padding: isTablet ? 16 : 12,
-        marginBottom: isTablet ? 12 : 8
+        borderRadius: isTablet ? 14 : 10,
+        padding: isTablet ? 20 : 16,
+        marginBottom: isTablet ? 16 : 12
       }}
     >
       {/* Header */}
       <View style={{ marginBottom: 8 }}>
-        <Text style={{ fontSize: fontSize.base, fontWeight: '700', color: '#111827' }}>
+        <Text style={{ fontSize: fontSize.large, fontWeight: '700', color: '#111827' }}>
           {product.nome}
         </Text>
-        <Text style={{ fontSize: fontSize.small, color: '#6B7280', marginTop: 2 }}>
+        <Text style={{ fontSize: fontSize.small, color: '#6B7280', marginTop: 4 }}>
           {product.linha} • {product.cap}ml • R${product.preco.toFixed(2)}
         </Text>
       </View>
