@@ -354,9 +354,10 @@ export default function RelatorioVendedorScreen() {
               <Text style={{ color: '#6B7280', marginBottom: 8 }}>{summary.sellerKey}</Text>
 
 
-              <Text style={{ color: '#111827', marginBottom: 3 }}>Faturamento : {formatCurrency(summary.monthSalesTotal)}</Text>
-              <Text style={{ color: '#111827', marginBottom: 3 }}>Consignado : {formatCurrency(summary.monthMeasurementsTotal)}</Text>
-              <Text style={{ color: '#111827', marginBottom: 3, fontWeight: '700' }}>Total faturado: {formatCurrency(summary.monthTotal)}</Text>
+              <Text style={{ color: '#111827', marginBottom: 3 }}>Faturamento: {formatCurrency(summary.monthSalesTotal)}</Text>
+              <Text style={{ color: '#111827', marginBottom: 3 }}>Venda Direta: {formatCurrency(summary.monthSalesTotal)}</Text>
+              <Text style={{ color: '#111827', marginBottom: 3 }}>Consignado: {formatCurrency(summary.monthMeasurementsTotal)}</Text>
+              <Text style={{ color: '#111827', marginBottom: 3, fontWeight: '700' }}>Total Faturado: {formatCurrency(summary.monthTotal)}</Text>
               <Text style={{ color: '#111827', marginBottom: 3 }}>Faturamento total: {formatCurrency(summary.allTimeSalesTotal)}</Text>
               <Text style={{ color: '#111827', marginBottom: 3 }}>Consignado total: {formatCurrency(summary.allTimeMeasurementsTotal)}</Text>
               <Text style={{ color: '#111827', marginBottom: 3, fontWeight: '700' }}>Total acumulado: {formatCurrency(summary.allTimeTotal)}</Text>

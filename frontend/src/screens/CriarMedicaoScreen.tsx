@@ -674,12 +674,9 @@ export default function CriarMedicaoScreen({ navigation, route }: Props) {
             maxToRenderPerBatch={4}
             windowSize={5}
             updateCellsBatchingPeriod={50}
-            removeClippedSubviews={true}
+            removeClippedSubviews={false}
             scrollEventThrottle={16}
-            getItemLayout={(_, index) => {
-              const ITEM_HEIGHT = isTablet ? 260 : 220;
-              return { length: ITEM_HEIGHT, offset: ITEM_HEIGHT * index, index };
-            }}
+            
           />
         ) : activeTab === 'bancada' ? (
           <>
@@ -697,12 +694,9 @@ export default function CriarMedicaoScreen({ navigation, route }: Props) {
               maxToRenderPerBatch={4}
               windowSize={5}
               updateCellsBatchingPeriod={50}
-              removeClippedSubviews={true}
+              removeClippedSubviews={false}
               scrollEventThrottle={16}
-              getItemLayout={(_, index) => {
-                const ITEM_HEIGHT = isTablet ? 220 : 180;
-                return { length: ITEM_HEIGHT, offset: ITEM_HEIGHT * index, index };
-              }}
+              
             />
           </>
         ) : (
@@ -728,12 +722,9 @@ export default function CriarMedicaoScreen({ navigation, route }: Props) {
             initialNumToRender={4}
             maxToRenderPerBatch={4}
             windowSize={5}
-            removeClippedSubviews={true}
+            removeClippedSubviews={false}
             scrollEventThrottle={16}
-            getItemLayout={(_, index) => {
-              const ITEM_HEIGHT = isTablet ? 220 : 180;
-              return { length: ITEM_HEIGHT, offset: ITEM_HEIGHT * index, index };
-            }}
+            
           />
         )}
       </View>

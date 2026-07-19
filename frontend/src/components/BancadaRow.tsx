@@ -97,8 +97,8 @@ function BancadaRowComponent({ product, onChange, hideValues = false, isConsigna
   const isTablet = width >= 768;
   const lineTheme = getLineTheme(product.linha);
   const normalizedLine = String(product.linha || '').toLowerCase();
-  // reduzir pela metade o tamanho da badge 'LINHA'
-  const badgeFontSize = (isTablet ? 6 : 5);
+  // badge usa tamanho proporcional ao `fontSize` para manter consistência com a tela de vendas
+  const badgeFontSize = isConsignado ? (isTablet ? 14 : 12) : (isTablet ? 12 : 10);
   const fontSize = isConsignado
     ? {
         small: isTablet ? 16 : 14,

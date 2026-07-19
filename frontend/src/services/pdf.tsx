@@ -1,5 +1,5 @@
 import * as Print from 'expo-print';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import { formatCurrency } from '../utils/format';
 import { Client } from '../data/clients';
 import { MeasurementRow } from './api';
@@ -28,13 +28,25 @@ function toDateOnly(dateTime: string) {
   return `${day}-${month}-${year}`;
 }
 
-async function saveNamedPdf(html: string, filePrefix: string, clientName: string, dateTime: string) {
+async function saveNamedPdf(html: string, filePrefix: string, clientName: string, dateTime: string, docType?: string) {
   const { uri } = await Print.printToFileAsync({ html });
   const safeClient = toSafeFilePart(clientName) || 'Barbearia';
   const safeDate = toDateOnly(dateTime);
-  const fileName = `${toSafeFilePart(filePrefix)}_${safeClient}_${safeDate}.pdf`;
-  const baseDir = FileSystem.Paths.document?.uri || FileSystem.Paths.cache?.uri;
+  const docPart = docType ? `_${toSafeFilePart(docType)}` : '';
+  const fileName = `${safeClient}${docPart}_${toSafeFilePart(filePrefix)}_${safeDate}.pdf`;
+
+  // Prefer documentDirectory/cacheDirectory (stable API), fallback to Paths if present
+  let baseDir = FileSystem.documentDirectory || FileSystem.cacheDirectory;
+  if (!baseDir) {
+    baseDir = FileSystem.Paths?.document?.uri || FileSystem.Paths?.cache?.uri || '';
+  }
+
+  // Se não houver um diretório conhecido, retorna o tmp uri do Print
   if (!baseDir) return uri;
+
+  // Garantir que haja uma barra no final
+  if (!baseDir.endsWith('/') && !baseDir.endsWith('\\')) baseDir = `${baseDir}/`;
+
   const targetUri = `${baseDir}${fileName}`;
 
   try {
@@ -44,7 +56,9 @@ async function saveNamedPdf(html: string, filePrefix: string, clientName: string
     }
     await FileSystem.copyAsync({ from: uri, to: targetUri });
     return targetUri;
-  } catch {
+  } catch (err) {
+    // se houver falha ao copiar, devolve o URI temporário e loga para diagnóstico
+    console.warn('[PDF SAVE] falha ao mover arquivo para pasta de documentos, retornando URI temporário', err);
     return uri;
   }
 }
@@ -99,7 +113,7 @@ export async function generateStockPDF(params: {
   </html>
   `;
 
-  return saveNamedPdf(html, 'Estoque', params.client?.nome || 'Barbearia', params.dateTime);
+  return saveNamedPdf(html, 'Estoque', params.client?.nome || 'Barbearia', params.dateTime, 'Estoque');
 }
 
 export async function generateMeasurementPDF(params: {
@@ -303,9 +317,18 @@ export async function generateMeasurementPDF(params: {
   // ========================================
   // ASSINATURA
   // ========================================
+  // Colocar assinatura em bloco separado para evitar corte entre páginas
   const assinatura = params.signatureDataUrl
-    ? `<div style="page-break-inside:avoid;padding:8px;border:1px solid #e5e7eb;border-radius:6px;display:inline-block"><img src="${params.signatureDataUrl}" style="width:200px;height:auto;display:block" /></div>`
-    : '<div style="color:#9CA3AF">Assinatura não coletada</div>';
+    ? `
+      <div style="page-break-before:always;break-before:page;page-break-inside:avoid;padding:8px;border:1px solid #e5e7eb;border-radius:6px;display:block;max-width:100%">
+        <img src="${params.signatureDataUrl}" style="width:200px;max-width:80%;height:auto;display:block" />
+      </div>
+    `
+    : `
+      <div style="page-break-before:always;break-before:page;page-break-inside:avoid;padding:8px;border:1px solid #e5e7eb;border-radius:6px;display:block;max-width:100%">
+        <div style="color:#9CA3AF">Assinatura não coletada</div>
+      </div>
+    `;
 
   // ========================================
   // RESUMO FINANCEIRO
@@ -409,7 +432,7 @@ export async function generateMeasurementPDF(params: {
   `;
 
   const clientName = params.client?.nome || params.responsavelMedicao || 'Barbearia';
-  return saveNamedPdf(html, 'Medicao', clientName, params.dateTime);
+  return saveNamedPdf(html, 'Medicao', clientName, params.dateTime, 'Consignado');
 }
 
 export async function generateEstoquePDF({
@@ -497,8 +520,16 @@ export async function generateEstoquePDF({
 
   // Assinatura
   const assinatura = signatureDataUrl
-    ? `<img src="${signatureDataUrl}" style="width:200px;height:auto;border:1px solid #e5e7eb;" />`
-    : '<div style="color:#9CA3AF">Assinatura não coletada</div>';
+    ? `
+      <div style="page-break-before:always;break-before:page;page-break-inside:avoid;padding:8px;border:1px solid #e5e7eb;border-radius:6px;display:block;max-width:100%">
+        <img src="${signatureDataUrl}" style="width:200px;max-width:80%;height:auto;display:block" />
+      </div>
+    `
+    : `
+      <div style="page-break-before:always;break-before:page;page-break-inside:avoid;padding:8px;border:1px solid #e5e7eb;border-radius:6px;display:block;max-width:100%">
+        <div style="color:#9CA3AF">Assinatura não coletada</div>
+      </div>
+    `;
 
   // PDF de Reposição Extra: apenas tabelas de produtos e bancada marcados, sem assinatura, sem textos extras
   const html = `
@@ -516,7 +547,7 @@ export async function generateEstoquePDF({
     </body>
   </html>
   `;
-  return saveNamedPdf(html, filePrefix || 'EstoqueInicial', clientName || 'Barbearia', dateTime || '');
+  return saveNamedPdf(html, filePrefix || 'EstoqueInicial', clientName || 'Barbearia', dateTime || '', 'Estoque');
 }
 
 export async function generateSalePDF(params: {
@@ -627,8 +658,16 @@ export async function generateSalePDF(params: {
     : 0;
 
   const assinatura = params.signatureDataUrl
-    ? `<img src="${params.signatureDataUrl}" style="width:200px;height:auto;border:1px solid #e5e7eb;" />`
-    : '<div style="color:#9CA3AF">Assinatura não coletada</div>';
+    ? `
+      <div style="page-break-before:always;break-before:page;page-break-inside:avoid;padding:8px;border:1px solid #e5e7eb;border-radius:6px;display:block;max-width:100%">
+        <img src="${params.signatureDataUrl}" style="width:200px;max-width:80%;height:auto;display:block" />
+      </div>
+    `
+    : `
+      <div style="page-break-before:always;break-before:page;page-break-inside:avoid;padding:8px;border:1px solid #e5e7eb;border-radius:6px;display:block;max-width:100%">
+        <div style="color:#9CA3AF">Assinatura não coletada</div>
+      </div>
+    `;
 
   const html = `
   <html>
@@ -713,7 +752,7 @@ export async function generateSalePDF(params: {
   </html>
   `;
 
-  return saveNamedPdf(html, 'Venda', params.clientName || 'Barbearia', params.dateTime);
+  return saveNamedPdf(html, 'Venda', params.clientName || 'Barbearia', params.dateTime, 'VendaDireta');
 }
 
 export async function generateReportChartPDF(params: {
@@ -787,5 +826,6 @@ export async function generateReportChartPDF(params: {
     `Relatorio_${params.chartTitle}`,
     params.clientName || 'Barbearia',
     params.dateTime || new Date().toLocaleString('pt-BR'),
+    'Relatorio',
   );
 }
