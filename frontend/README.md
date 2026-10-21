@@ -1,232 +1,203 @@
 
-# 💈 Bymen - Sistema de Gestão para Barbearias
+# 💈 Bymen - Sistema de Gestão para Barbearias (Frontend)
 
-Aplicativo mobile moderno para gestão de estoque, vendas, uso interno e relatórios em barbearias, com experiência profissional, responsiva e inovadora.
+Este arquivo documenta o frontend do aplicativo Bymen, incluindo a estrutura do projeto, telas, componentes, serviços, fluxos críticos (venda/medição/PDF) e a integração com o Bling via backend.
 
-## 📋 Sobre o Projeto
+Sumário rápido
+- Stack: React Native + Expo (SDK ~54), TypeScript
+- Backend: NestJS (API em `http://localhost:3000/api` por padrão)
+- Integração com Bling: realizada exclusivamente pelo backend (`/integrations/bling/*`)
 
-O **Bymen** é um aplicativo desenvolvido em React Native + Expo que permite o controle completo de estoque, vendas e uso interno de produtos para barbearias. O sistema oferece rastreamento detalhado de produtos, geração de relatórios em PDF e assinatura digital.
+Conteúdo deste README
+- Arquitetura e estrutura de pastas
+- Lista completa de telas (screens) e responsabilidades
+- Componentes principais
+- Serviços (API, PDF, WhatsApp, seller goals, etc.)
+- Fluxos: finalizar venda, finalizar medição, gerar PDF
+- Como verificar integração com Bling e debugar
+- Como executar e testar localmente
 
-
-## ✨ Funcionalidades e Telas
-
-### 🏠 Dashboard Moderno
-- Acesso rápido às principais funções com botões grandes e ícones intuitivos
-- Visualização de clientes, estoque, histórico, relatórios e importação
-
-### 🏪 Gestão de Clientes
-- Cadastro e edição completos (nome, CNPJ/CPF, endereço, telefone, responsável)
-- Visualização de histórico de medições e estoque individualizado
-
-### 📊 Medições e Controle de Estoque
-- Tela de medição com abas: **Medição (produtos vendidos)**, **Bancada (uso interno)**
-- Navegação por abas com ícones e feedback visual
-- Cálculo automático de estoque, vendas, reposições e bonificações
-- Aba de bonificação para produtos gratuitos
-
-### 📄 Relatórios e Gráficos
-- Tela de relatórios com gráficos de vendas e estoque (LineChart/BarChart)
-- Filtros por período e tipo de produto
-- Modal de detalhamento ao tocar nos gráficos
-- Exportação e compartilhamento de relatórios (PDF, WhatsApp)
-
-### 📥 Importação de Estoque
-- Importação via CSV simples e validado
-- Feedback visual e validação automática
-
-### ✍️ Assinatura Digital
-- Modal em tela cheia, preview, limpar/cancelar/confirmar
-- Assinatura integrada ao PDF gerado
-
-### 📱 Design, UX e Inovações
-- Interface responsiva para mobile e tablet
-- Ícones em botões e abas para navegação intuitiva
-- Cards com sombra, cores temáticas e tipografia moderna
-- Feedback visual em todas as ações (modais, filtros, seleção)
-- Modal de detalhamento em gráficos
-- Navegação fluida e transições suaves
-
-## 🛠️ Tecnologias Utilizadas
-
-- **React Native** - Framework mobile multiplataforma
-- **Expo SDK ~54.0** - Plataforma de desenvolvimento
-- **TypeScript** - Tipagem estática
-- **React Navigation** - Navegação entre telas
-- **AsyncStorage** - Persistência local com fallback offline
-- **Backend NestJS + Supabase (PostgreSQL)** - Persistência homologada
-- **expo-print** - Geração de PDFs
-- **react-native-signature-canvas** - Captura de assinatura digital
-- **expo-sharing** - Compartilhamento de arquivos
-
-## 📁 Estrutura do Projeto
+## Estrutura do projeto
 
 ```
-barbearia/
-├── src/
-│   ├── components/          # Componentes reutilizáveis
-│   │   ├── Button.tsx
-│   │   ├── Card.tsx
-│   │   ├── Input.tsx
-│   │   ├── ProductRow.tsx   # Linha de produto para medição
-│   │   ├── BancadaRow.tsx   # Linha de produto para bancada
-│   │   └── SignaturePad.tsx # Modal de assinatura
-│   ├── data/                # Dados estáticos
-│   │   ├── clients.tsx      # Clientes pré-cadastrados
-│   │   └── products.tsx     # Catálogo de produtos Bymen
-│   ├── hooks/               # Custom hooks
-│   │   └── useResponsive.tsx
-│   ├── screens/             # Telas do aplicativo
-│   │   ├── LoginScreen.tsx
-│   │   ├── DashboardScreen.tsx
-│   │   ├── ClientesScreen.tsx
-│   │   ├── ClienteDetalhesScreen.tsx
-│   │   ├── CriarMedicaoScreen.tsx      # Tela com abas
-│   │   ├── FinalizarMedicaoScreen.tsx
-│   │   ├── HistoricoMedicoesScreen.tsx
-│   │   └── ImportarEstoqueScreen.tsx
-│   ├── services/            # Lógica de negócio
-│   │   ├── api.tsx          # Persistência e tipos
-│   │   ├── pdf.tsx          # Geração de PDF
-│   │   └── whatsapp.tsx     # Compartilhamento
-│   ├── types/               # Declarações TypeScript
-│   │   └── signature.d.ts
-│   ├── utils/               # Funções auxiliares
-│   │   ├── calculate.tsx
-│   │   └── format.tsx
-│   └── routes.tsx           # Configuração de rotas
-├── App.tsx                  # Componente raiz
-├── package.json
-└── tsconfig.json
+frontend/
+├─ App.tsx
+├─ package.json
+├─ .env (EXPO_PUBLIC_API_URL, EXPO_PUBLIC_ENABLE_BLING)
+├─ src/
+│  ├─ components/        # UI reutilizáveis (Button, Card, SignaturePad, ProductRow, BancadaRow...)
+│  ├─ data/              # Dados estáticos (clients.tsx, products.tsx)
+│  ├─ hooks/             # Hooks customizados (useResponsive, etc.)
+│  ├─ screens/           # Telas do app (lista completa abaixo)
+│  ├─ services/          # Lógica: api.tsx, pdf.tsx, whatsapp.tsx, sellerGoals.ts, etc.
+│  ├─ utils/             # Helpers (format, product helpers, keyboard focus)
+│  └─ routes.tsx         # Navegação (RootStack)
 ```
 
-## 🚀 Como Executar
+## Lista de telas (completa)
 
-### Pré-requisitos
-- Node.js (v18 ou superior)
-- npm ou yarn
-- Expo CLI
-- Expo Go (app mobile) ou emulador Android/iOS
+- `LoginScreen.tsx` — autenticação do usuário
+- `DashboardScreen.tsx` — visão geral e atalhos
+- `ClientesScreen.tsx` — listagem de clientes
+- `ClienteDetalhesScreen.tsx` — histórico e detalhes do cliente
+- `CadastrarClienteScreen.tsx` — criar/editar cliente
+- `CriarMedicaoScreen.tsx` — interface de medição (abas: Medição, Bancada, Bonificação)
+- `FinalizarMedicaoScreen.tsx` — revisão, assinatura, geração de PDF, finalização e sincronização com Bling (condicional)
+- `HistoricoMedicoesScreen.tsx` — histórico de medições por cliente
+- `VendasScreen.tsx` — nova tela de vendas (montagem do pedido antes de finalizar)
+- `FinalizarVendaScreen.tsx` — revisão/assinatura/registro da venda e tentativa de sincronização com Bling
+- `EstoqueScreen.tsx` — visualização do estoque por cliente/distribuidor
+- `EnviarEstoqueScreen.tsx` — interface para envio/repasse de estoque
+- `NovoEstoqueScreen.tsx` — adicionar estoque manualmente
+- `ImportarEstoqueScreen.tsx` — CSV import
+- `RelatoriosScreen.tsx` — painel de relatórios e gráficos
+- `RelatorioVendedorScreen.tsx` — relatório mensal por vendedor (inclui Venda Direta, metas individuais e meta comercial)
+- `RelatorioEstoqueRuaScreen.tsx` — relatório de estoque em 'rua' (vendedores)
+- `PendenciasSyncScreen.tsx` — lista de sincronizações pendentes (queue)
+- `GerenciarUsuariosScreen.tsx` — tela de funcionários / gerenciamento de usuários (criar, editar, roles)
+- `ConfiguracoesUsuarioScreen.tsx` — configurações do usuário logado
+- `ConfiguracoesGeraisScreen.tsx` — configurações globais do app
 
-### Instalação
+## Componentes principais
 
+- `components/Button.tsx`
+- `components/Card.tsx`
+- `components/Input.tsx`
+- `components/SignaturePad.tsx` — captura de assinatura digital
+- `components/ProductRow.tsx` — linha de produto para medição/venda
+- `components/BancadaRow.tsx` — linha de produto para bancada (uso interno)
+- `components/ConsignedProductRow.tsx` — produto consignado
+- `components/PriceListRow.tsx`
+- `components/PasswordInput.tsx`
+- `components/OperationContextHeader.tsx`
+- `components/BymenLoader.tsx` / `BymenLoadingOverlay.tsx`
+- `components/AppAlertProvider.tsx`
+
+## Serviços (src/services)
+
+- `api.tsx` — camada de persistência local e proxy para backend
+  - `homologRequest()` — wrapper para chamadas ao backend (`EXPO_PUBLIC_API_URL`)
+  - Funções de leitura/gravação local (AsyncStorage)
+  - `saveMeasurement`, `saveSale`, `enqueueSyncPending` (fila de retry)
+
+- `pdf.tsx` — geração de PDFs via `expo-print` e salvamento com nome determinístico
+
+- `whatsapp.tsx` — compartilhamento via WhatsApp/Sharing
+
+- `sellerGoals.ts` — persistência e cálculo de metas comerciais
+
+- `stockCritical.ts`, `notifications.ts`, `settings.ts`, `cep.tsx`, `access.ts` — auxiliares de negócio
+
+## Fluxos críticos
+
+1. Finalizar Venda (frontend):
+   - Usuário monta venda em `VendasScreen` → `FinalizarVendaScreen`.
+   - `handleConfirmarVenda()` faz validações, atualiza estoque local (`removeProductStock` / street stock) e chama `saveSale()`.
+   - `saveSale()` tenta persistir em homolog (`/homolog/sales/upsert`) e faz POST para `/integrations/bling/vendas/:saleId/finalize`.
+   - Em caso de falha na sincronização com o backend, a venda é adicionada à fila `enqueueSyncPending`.
+
+2. Finalizar Medição (frontend):
+   - Em `FinalizarMedicaoScreen`, após coleta de assinatura e confirmação, `saveMeasurement()` persiste localmente e chama, se `EXPO_PUBLIC_ENABLE_BLING=true`, o endpoint `/integrations/bling/medicoes/:id/finalize`.
+   - O backend cria pedido no Bling, tenta emitir NFe e grava `blingOrderNumber` / `invoicePdfUrl` no registro local via resposta.
+
+3. Geração de PDF:
+   - `src/services/pdf.tsx` gera HTML, chama `Print.printToFileAsync`, depois copia o arquivo para `FileSystem.documentDirectory` com nome: `<Barbearia>_<Tipo>_<Prefixo>_<DD-MM-YYYY>.pdf`.
+   - Assinatura é renderizada em uma nova página para evitar cortes.
+
+## Integração com Bling (detalhes)
+
+- O frontend envia apenas para o backend; o backend faz todas as chamadas ao Bling.
+- Endpoints no backend (exemplos):
+  - `POST /api/integrations/bling/clients/sync`
+  - `POST /api/integrations/bling/stock/movement`
+  - `POST /api/integrations/bling/medicoes/:medicaoId/finalize`
+  - `POST /api/integrations/bling/vendas/:vendaId/finalize`
+  - `POST /api/integrations/bling/webhooks`
+
+- No backend, `BlingService` faz:
+  - Autenticação via API key / OAuth (conforme variáveis de ambiente)
+  - Rate limiting (requestsPerSecond) e retries com backoff
+  - Conversão de XML ↔ JSON quando necessário
+  - Logging em `integrationLog` e registro em `integrationDeadLetter`
+
+## Como verificar operacionalmente se o app está enviando ao Bling
+
+1. Habilite `EXPO_PUBLIC_ENABLE_BLING=true` no frontend se quiser que o app dispare medições.
+2. Gere uma venda (ou medição) no app e finalize.
+3. No backend, abra o Prisma Studio para inspecionar a tabela `integrationLog`:
 ```bash
-# Clone o repositório
-git clone <url-do-repositorio>
+cd backend
+npx prisma studio
+```
+Filtre por `provider = 'BLING'` e verifique `endpoint`, `requestBody`, `responseBody`, `statusCode`, `success`.
 
-# Entre na pasta do projeto
-cd barbearia
+4. Teste manual com curl (substitua IDs e rode sem os sinais `< >`):
+```bash
+# Venda
+curl -X POST "http://localhost:3000/api/integrations/bling/vendas/SALE_ID/finalize" \
+  -H "Content-Type: application/json" \
+  -d '{"localClientId":"CLIENT_ID","items":[{"productId":"p1","quantity":1,"unitPrice":10}]}'
 
-# Instale as dependências
+# Medição
+curl -X POST "http://localhost:3000/api/integrations/bling/medicoes/MEDICAO_ID/finalize" \
+  -H "Content-Type: application/json" \
+  -d '{"localClientId":"CLIENT_ID","items":[{"productId":"p1","quantity":1,"unitPrice":10}]}'
+```
+
+5. Se houver falhas repetidas, confira `integrationDeadLetter` e os logs do backend (stdout). Use ngrok para expor endpoints caso precise que o Bling envie webhooks para um ambiente local.
+
+## Variáveis de ambiente importantes
+
+- Frontend:
+  - `EXPO_PUBLIC_API_URL` — URL base da API (ex.: `http://localhost:3000/api`)
+  - `EXPO_PUBLIC_ENABLE_BLING` — `true` para permitir sincronização de medições diretamente do app
+
+- Backend (resumo):
+  - `BLING_API_KEY_HOMOLOG`, `BLING_API_KEY_PRODUCTION`
+  - `BLING_BASE_URL_HOMOLOG`, `BLING_BASE_URL_PRODUCTION`
+  - `BLING_ENV` (homolog|production)
+  - `BLING_WEBHOOK_TOKEN`
+  - `DATABASE_URL`
+
+## Como rodar localmente (resumo)
+
+1. Backend
+```bash
+cd backend
 npm install
-
-# Inicie o servidor de desenvolvimento
-npx expo start
+npx prisma generate
+npm run start:dev
 ```
 
-### Ambiente de homologação (frontend)
-
-1. Crie um arquivo `.env` na raiz do frontend com:
-
+2. Frontend
 ```bash
-EXPO_PUBLIC_API_URL=http://localhost:3000/api
+cd frontend
+npm install
+EXPO_PUBLIC_API_URL=http://localhost:3000/api EXPO_PUBLIC_ENABLE_BLING=true npx expo start
 ```
 
-2. Suba o backend em homologação (`backend/.env` com `DATABASE_URL` do Supabase).
-
-### Executando no dispositivo
-1. Abra o app **Expo Go** no seu celular
-2. Escaneie o QR Code que aparece no terminal
-3. O app será carregado automaticamente
-
-
-## 📱 Fluxo de Uso
-
-1. **Login**
-2. **Dashboard**: Botões com ícones para cada função
-3. **Clientes**: Lista, cadastro e edição
-4. **Medição**: Abas Medição/Bancada/Bonificação
-5. **Finalizar Medição**: Revisão, assinatura, PDF
-6. **Relatórios**: Gráficos interativos, filtros, exportação
-7. **Importação**: Estoque via CSV
-8. **Compartilhamento**: PDF via WhatsApp
-
-## 💾 Armazenamento de Dados
-
-O sistema utiliza **AsyncStorage** local e sincronização com backend em homologação:
-- `bymen_measurements` - Histórico de medições
-- `bymen_stock` - Estoque do distribuidor
-- `bymen_client_stock` - Estoque por cliente
-- `bymen_clients` - Lista de clientes cadastrados
-- Supabase (via backend): usuários, barbearias, medições e movimentos de estoque
-
-## 📊 Tipos de Dados
-
-### MedicaoRow (Produtos Vendidos)
-```typescript
-{
-  id: string;
-  nome: string;
-  estoqueAtual: number;
-  vendidos: number;
-  repostos: number;
-  diferenca: number;      // EA - Novo Estoque
-  novoEstoque: number;    // EA - V + R
-  valorMedicao: number;   // V × Preço
-}
+3. Abrir Prisma Studio para ver logs de integração
+```bash
+cd backend
+npx prisma studio
 ```
 
-### BancadaRow (Uso Interno)
-```typescript
-{
-  id: string;
-  nome: string;
-  quantidadeComprada: number;
-  valorTotal: number;     // Qtd × Preço
-}
-```
+## Checklist de testes de integração (sugestão)
 
-## 📋 Formato CSV para Importação
-
-```csv
-Shampoo Fortificante,45
-Balm Pós-Barba,32
-Pomada Modeladora,28
-Óleo Capilar,15
-Tônico Capilar,10
-```
-
-**Regras:**
-- Formato: `NomeDoProduto,Quantidade`
-- Nome do produto deve ser **exatamente igual** ao cadastrado
-- Separador: vírgula (`,`)
-- Uma linha por produto
-
-
-## 🎨 Design, UX e Responsividade
-
-- Layout responsivo para mobile e tablet (breakpoint: 400px/768px)
-- Cores temáticas (azul para medição, vermelho para bancada)
-- Cards com sombra, títulos centralizados, espaçamento otimizado
-- Ícones em botões, abas e títulos de gráficos
-- Feedback visual em filtros, seleção e ações
-- Modal de detalhamento em gráficos
-- Navegação fluida e moderna
-
-## 🔐 Segurança
-
-- Validação de payload no backend (`ValidationPipe`)
-- Persistência homologada em Supabase via API NestJS
-- Assinatura digital para validação de documentos
-
-## 📝 Licença
-
-Este projeto é proprietário da Bymen.
-
-## 👥 Suporte
-
-Para dúvidas ou suporte técnico, entre em contato com a equipe Bymen.
+- [ ] Subir backend com variáveis Bling configuradas (homolog)
+- [ ] Habilitar `EXPO_PUBLIC_ENABLE_BLING=true` no frontend
+- [ ] Criar/atualizar cliente e verificar `clients/sync` no backend
+- [ ] Finalizar uma venda; verificar `integrationLog` por `/vendas/:id/finalize`
+- [ ] Finalizar uma medição; verificar `integrationLog` por `/medicoes/:id/finalize`
+- [ ] Se NFe emitida, verificar campos `invoicePdfUrl`/`invoiceAccessKey` no retorno salvo
+- [ ] Simular falha (remover API key) e verificar `integrationDeadLetter`
 
 ---
 
-**Versão**: 1.0.0  
-**Última atualização**: Fevereiro 2026
+Se desejar, eu adiciono agora:
+- exemplos de payloads para cada endpoint do Bling;
+- documentação dos formatos de storage local (chaves AsyncStorage);
+- um script curl/postman collection com exemplos reais (substituindo IDs).
+
+**Última atualização**: Agosto 2026
+{
